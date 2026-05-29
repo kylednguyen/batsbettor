@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+data/raw/
+*.pkl
+__pycache__/
+*.pyc
+.DS_Store
