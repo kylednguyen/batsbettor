@@ -325,7 +325,7 @@ export default function App() {
         <div className="chatgame-sidebar__header">
           <div className="chatgame-sidebar__brand">
             <div className="brand-mark">MP</div>
-            {!isSidebarCollapsed ? <span className="sidebar-logo">MLB Chat</span> : null}
+            {!isSidebarCollapsed ? <span className="sidebar-logo">BattersBetter</span> : null}
           </div>
           <button
             className="sidebar-toggle"

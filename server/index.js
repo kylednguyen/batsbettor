@@ -114,5 +114,5 @@ app.get('/api/mlb/odds', async (req, res) => {
 
 httpServer.listen(port, () => {
   liveUpdateHub.start()
-  console.log(`MLBPredict backend listening on http://localhost:${port}`)
+  console.log(`BattersBetter backend listening on http://localhost:${port}`)
 })
