@@ -1,6 +1,6 @@
 const MLB_STATS_ORIGIN = 'https://statsapi.mlb.com'
 
-function getEasternDateString(date = new Date()) {
+function getEasternDateString(date = new Date()): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -12,7 +12,7 @@ function getEasternDateString(date = new Date()) {
   return `${lookup.year}-${lookup.month}-${lookup.day}`
 }
 
-function buildUrl(path, query = {}) {
+function buildUrl(path: string, query: Record<string, string | number | boolean | undefined | null> = {}): URL {
   const url = new URL(path, MLB_STATS_ORIGIN)
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -22,7 +22,7 @@ function buildUrl(path, query = {}) {
   return url
 }
 
-async function fetchJson(url) {
+async function fetchJson(url: URL): Promise<unknown> {
   const response = await fetch(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
@@ -34,25 +34,55 @@ async function fetchJson(url) {
   return response.json()
 }
 
+export interface ScheduleByDateOptions {
+  date: string
+  sportId?: number
+  gameType?: string
+}
+
+export interface GameFeedOptions {
+  gamePk: number
+}
+
+export interface FlatGame {
+  gamePk: number
+  gameDate: string | null
+  status: string | null
+  homeTeam: string | null
+  awayTeam: string | null
+}
+
 export class MlbStatsClient {
-  async getScheduleByDate({ date, sportId = 1, gameType = 'R' }) {
+  async getScheduleByDate({ date, sportId = 1, gameType = 'R' }: ScheduleByDateOptions): Promise<unknown> {
     const url = buildUrl('/api/v1/schedule', { sportId, gameType, date })
     return fetchJson(url)
   }
 
-  async getGameFeed({ gamePk }) {
+  async getGameFeed({ gamePk }: GameFeedOptions): Promise<unknown> {
     const url = buildUrl(`/api/v1.1/game/${gamePk}/feed/live`)
     return fetchJson(url)
   }
 
-  async getTodaySchedule() {
+  async getTodaySchedule(): Promise<unknown> {
     const today = getEasternDateString()
     return this.getScheduleByDate({ date: today })
   }
 }
 
-export function flattenGamesFromSchedule(schedulePayload) {
-  return (schedulePayload?.dates ?? []).flatMap((dateEntry) =>
+export function flattenGamesFromSchedule(schedulePayload: unknown): FlatGame[] {
+  const payload = schedulePayload as {
+    dates?: Array<{ games?: Array<{
+      gamePk: number
+      gameDate: string
+      status?: { detailedState?: string; abstractGameState?: string }
+      teams?: {
+        home?: { team?: { name?: string } }
+        away?: { team?: { name?: string } }
+      }
+    }> }>
+  } | null
+
+  return (payload?.dates ?? []).flatMap((dateEntry) =>
     (dateEntry.games ?? []).map((game) => ({
       gamePk: game.gamePk,
       gameDate: game.gameDate,

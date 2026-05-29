@@ -1,4 +1,10 @@
-function getOccupiedBases(baseState) {
+interface OccupiedBases {
+  first: boolean
+  second: boolean
+  third: boolean
+}
+
+function getOccupiedBases(baseState: string | null | undefined): OccupiedBases {
   const normalized = (baseState || '').toLowerCase()
   return {
     first: normalized.includes('1st'),
@@ -7,7 +13,12 @@ function getOccupiedBases(baseState) {
   }
 }
 
-export function BaseballDiamond({ baseState, caption }) {
+interface BaseballDiamondProps {
+  baseState?: string | null
+  caption?: string | null
+}
+
+export function BaseballDiamond({ baseState, caption }: BaseballDiamondProps) {
   const occupied = getOccupiedBases(baseState)
   const visibleCaption = caption ?? (baseState && baseState !== 'Bases empty' ? baseState : null)
 
@@ -25,7 +36,11 @@ export function BaseballDiamond({ baseState, caption }) {
   )
 }
 
-export function MiniBaseballDiamond({ baseState }) {
+interface MiniBaseballDiamondProps {
+  baseState?: string | null
+}
+
+export function MiniBaseballDiamond({ baseState }: MiniBaseballDiamondProps) {
   const occupied = getOccupiedBases(baseState)
   const label = baseState && baseState !== 'Bases empty' ? baseState : undefined
 

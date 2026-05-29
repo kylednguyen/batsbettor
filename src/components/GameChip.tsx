@@ -1,4 +1,10 @@
-export function GameChip({ game }) {
+import type { LiveGame } from '../types'
+
+interface GameChipProps {
+  game: LiveGame
+}
+
+export function GameChip({ game }: GameChipProps) {
   return (
     <article className="game-chip">
       <div className="game-chip-header">

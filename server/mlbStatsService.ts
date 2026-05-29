@@ -6,7 +6,62 @@ const ODDS_API_MARKETS = 'h2h'
 const ODDS_API_BOOKMAKER = process.env.ODDS_API_BOOKMAKER || ''
 const ODDS_API_KEY = process.env.ODDS_API_KEY || ''
 
-function buildUrl(path, query = {}) {
+export interface ScoreCard {
+  gamePk: number | null
+  gameDate: string | null
+  matchup: string
+  awayTeam: string | null
+  homeTeam: string | null
+  awayAbbreviation: string
+  homeAbbreviation: string
+  awayRecord: string | null
+  homeRecord: string | null
+  status: string | null
+  statusCode: string | null
+  score: string
+  awayScore: number | null
+  homeScore: number | null
+  inning: string | null
+  inningState: string | null
+  outs: number | null
+  count: string | null
+  baseState: string | null
+  oddsProvider: string | null
+  homeMoneyline: number | null
+  awayMoneyline: number | null
+  homeMoneylineDisplay: string | null
+  awayMoneylineDisplay: string | null
+  oddsLastUpdate: string | null
+  feedError?: string
+}
+
+export interface ScoreBox {
+  gamePk: number | null
+  matchup: string | null
+  status: string | null
+  score: string | null
+  baseState: string | null
+  count: string | null
+  outs: number | null
+}
+
+interface OddsEntry {
+  provider: string | null
+  homeMoneyline: number | null
+  awayMoneyline: number | null
+  homeMoneylineDisplay: string | null
+  awayMoneylineDisplay: string | null
+  lastUpdate: string | null
+}
+
+interface OddsPayload {
+  provider: string | null
+  oddsByLookupKey: Map<string, OddsEntry>
+}
+
+type QueryParams = Record<string, string | number | boolean | null | undefined>
+
+function buildUrl(path: string, query: QueryParams = {}): URL {
   const url = new URL(path, MLB_STATS_ORIGIN)
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -16,7 +71,7 @@ function buildUrl(path, query = {}) {
   return url
 }
 
-function buildOddsUrl(path, query = {}) {
+function buildOddsUrl(path: string, query: QueryParams = {}): URL {
   const url = new URL(path, ODDS_API_ORIGIN)
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -26,7 +81,7 @@ function buildOddsUrl(path, query = {}) {
   return url
 }
 
-async function fetchJson(url) {
+async function fetchJson(url: URL): Promise<unknown> {
   const response = await fetch(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
@@ -38,13 +93,13 @@ async function fetchJson(url) {
   return response.json()
 }
 
-function normalizeTeamName(name) {
+function normalizeTeamName(name: unknown): string {
   return String(name || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
 }
 
-function getDateKeyFromIso(isoString) {
+function getDateKeyFromIso(isoString: string | null | undefined): string | null {
   if (!isoString) return null
   const date = new Date(isoString)
   if (Number.isNaN(date.getTime())) return null
@@ -57,31 +112,33 @@ function getDateKeyFromIso(isoString) {
   return formatter.format(date)
 }
 
-function buildOddsLookupKey({ awayTeam, homeTeam, gameDate }) {
+function buildOddsLookupKey({ awayTeam, homeTeam, gameDate }: {
+  awayTeam: unknown
+  homeTeam: unknown
+  gameDate: string | null | undefined
+}): string {
   const dateKey = getDateKeyFromIso(gameDate) ?? gameDate ?? ''
   return `${normalizeTeamName(awayTeam)}::${normalizeTeamName(homeTeam)}::${dateKey}`
 }
 
-function formatAmericanOdds(price) {
+function formatAmericanOdds(price: number | null | undefined): string | null {
   if (price === null || price === undefined || Number.isNaN(Number(price))) return null
   const numeric = Number(price)
   return numeric > 0 ? `+${numeric}` : `${numeric}`
 }
 
-function pickPreferredBookmaker(bookmakers = []) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pickPreferredBookmaker(bookmakers: any[] = []): any {
   if (!Array.isArray(bookmakers) || bookmakers.length === 0) return null
   if (ODDS_API_BOOKMAKER) {
-    return bookmakers.find((bookmaker) => bookmaker?.key === ODDS_API_BOOKMAKER) ?? bookmakers[0]
+    return bookmakers.find((b) => b?.key === ODDS_API_BOOKMAKER) ?? bookmakers[0]
   }
   return bookmakers[0]
 }
 
-export async function getCurrentMlbOdds() {
+export async function getCurrentMlbOdds(): Promise<OddsPayload> {
   if (!ODDS_API_KEY) {
-    return {
-      provider: null,
-      oddsByLookupKey: new Map(),
-    }
+    return { provider: null, oddsByLookupKey: new Map() }
   }
 
   const url = buildOddsUrl(`/v4/sports/${ODDS_API_SPORT_KEY}/odds`, {
@@ -91,19 +148,23 @@ export async function getCurrentMlbOdds() {
     oddsFormat: 'american',
   })
 
-  const payload = await fetchJson(url)
-  const oddsByLookupKey = new Map()
+  const payload = await fetchJson(url) as unknown[]
+  const oddsByLookupKey = new Map<string, OddsEntry>()
 
   for (const event of payload ?? []) {
-    const bookmaker = pickPreferredBookmaker(event?.bookmakers)
-    const market = bookmaker?.markets?.find((item) => item?.key === 'h2h')
-    const outcomes = market?.outcomes ?? []
-    const homeOutcome = outcomes.find((outcome) => outcome?.name === event?.home_team) ?? null
-    const awayOutcome = outcomes.find((outcome) => outcome?.name === event?.away_team) ?? null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const e = event as Record<string, any>
+    const bookmaker = pickPreferredBookmaker(e?.bookmakers)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const market = bookmaker?.markets?.find((item: any) => item?.key === 'h2h')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const outcomes: any[] = market?.outcomes ?? []
+    const homeOutcome = outcomes.find((o) => o?.name === e?.home_team) ?? null
+    const awayOutcome = outcomes.find((o) => o?.name === e?.away_team) ?? null
     const lookupKey = buildOddsLookupKey({
-      awayTeam: event?.away_team,
-      homeTeam: event?.home_team,
-      gameDate: event?.commence_time,
+      awayTeam: e?.away_team,
+      homeTeam: e?.home_team,
+      gameDate: e?.commence_time,
     })
 
     oddsByLookupKey.set(lookupKey, {
@@ -116,28 +177,20 @@ export async function getCurrentMlbOdds() {
     })
   }
 
-  return {
-    provider: 'The Odds API',
-    oddsByLookupKey,
-  }
+  return { provider: 'The Odds API', oddsByLookupKey }
 }
 
-export async function getMlbOddsByDate({ date }) {
+export async function getMlbOddsByDate({ date }: { date: string }) {
   const oddsPayload = await getCurrentMlbOdds()
   const odds = [...oddsPayload.oddsByLookupKey.entries()]
     .filter(([lookupKey]) => lookupKey.endsWith(`::${date}`))
     .map(([, value]) => value)
 
-  return {
-    date,
-    provider: oddsPayload.provider,
-    odds,
-  }
+  return { date, provider: oddsPayload.provider, odds }
 }
 
-function attachOddsToCard(card, oddsLookup) {
+function attachOddsToCard(card: ScoreCard, oddsLookup: OddsEntry | null | undefined): ScoreCard {
   if (!oddsLookup) return card
-
   return {
     ...card,
     oddsProvider: oddsLookup.provider ?? null,
@@ -149,18 +202,42 @@ function attachOddsToCard(card, oddsLookup) {
   }
 }
 
-export async function getScheduleByDate({ date, sportId = 1, gameType = 'R' }) {
+export async function getScheduleByDate({ date, sportId = 1, gameType = 'R' }: { date: string; sportId?: number; gameType?: string }): Promise<unknown> {
   const url = buildUrl('/api/v1/schedule', { sportId, gameType, date })
   return fetchJson(url)
 }
 
-export async function getGameFeed({ gamePk }) {
+export async function getGameFeed({ gamePk }: { gamePk: number }): Promise<unknown> {
   const url = buildUrl(`/api/v1.1/game/${gamePk}/feed/live`)
   return fetchJson(url)
 }
 
-export function flattenGamesFromSchedule(schedulePayload) {
-  return (schedulePayload?.dates ?? []).flatMap((dateEntry) =>
+export function flattenGamesFromSchedule(schedulePayload: unknown): Array<{
+  gamePk: number
+  gameDate: string
+  status: string | null
+  statusCode: string | null
+  homeTeam: string | null
+  awayTeam: string | null
+  homeAbbreviation: string | null
+  awayAbbreviation: string | null
+  homeScore: number | null
+  awayScore: number | null
+}> {
+  const payload = schedulePayload as {
+    dates?: Array<{
+      games?: Array<{
+        gamePk: number
+        gameDate: string
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        status?: Record<string, any>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        teams?: Record<string, any>
+      }>
+    }>
+  } | null
+
+  return (payload?.dates ?? []).flatMap((dateEntry) =>
     (dateEntry.games ?? []).map((game) => ({
       gamePk: game.gamePk,
       gameDate: game.gameDate,
@@ -176,51 +253,59 @@ export function flattenGamesFromSchedule(schedulePayload) {
   )
 }
 
-function formatCount(linescore) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatCount(linescore: Record<string, any> | null | undefined): string | null {
   const balls = linescore?.balls
   const strikes = linescore?.strikes
   if (balls === undefined || strikes === undefined) return null
   return `${balls}-${strikes}`
 }
 
-function formatBaseState(offense) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatBaseState(offense: Record<string, any> | null | undefined): string | null {
   if (!offense || typeof offense !== 'object') return null
-  const occupied = []
+  const occupied: string[] = []
   if (offense?.first) occupied.push('1st')
   if (offense?.second) occupied.push('2nd')
   if (offense?.third) occupied.push('3rd')
   return occupied.length > 0 ? occupied.join(', ') : 'Bases empty'
 }
 
-function formatScore(awayAbbreviation, awayScore, homeAbbreviation, homeScore) {
+function formatScore(
+  awayAbbreviation: string,
+  awayScore: number | null,
+  homeAbbreviation: string,
+  homeScore: number | null
+): string {
   if (awayScore === null || awayScore === undefined || homeScore === null || homeScore === undefined) {
     return 'Score unavailable'
   }
   return `${awayAbbreviation} ${awayScore} - ${homeAbbreviation} ${homeScore}`
 }
 
-function formatRecord(record) {
+function formatRecord(record: { wins?: number; losses?: number } | null | undefined): string | null {
   const wins = record?.wins
   const losses = record?.losses
   if (wins === null || wins === undefined || losses === null || losses === undefined) return null
   return `${wins}-${losses}`
 }
 
-function summarizeGameState(feed) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function summarizeGameState(feed: Record<string, any>): Partial<ScoreCard> {
   const gameData = feed?.gameData ?? {}
   const linescore = feed?.liveData?.linescore ?? {}
   const offense = linescore?.offense ?? {}
   const teams = gameData?.teams ?? {}
-  const statusCode = gameData?.status?.abstractGameCode ?? null
+  const statusCode: string | null = gameData?.status?.abstractGameCode ?? null
   const isLive = statusCode === 'L'
   const isFinal = statusCode === 'F'
-  const awayAbbreviation = teams?.away?.abbreviation ?? teams?.away?.name ?? 'Away'
-  const homeAbbreviation = teams?.home?.abbreviation ?? teams?.home?.name ?? 'Home'
-  const awayScore = linescore?.teams?.away?.runs ?? null
-  const homeScore = linescore?.teams?.home?.runs ?? null
-  const inningOrdinal = linescore?.currentInningOrdinal ?? null
-  const halfInning = linescore?.inningHalf ?? null
-  const outs = linescore?.outs ?? null
+  const awayAbbreviation: string = teams?.away?.abbreviation ?? teams?.away?.name ?? 'Away'
+  const homeAbbreviation: string = teams?.home?.abbreviation ?? teams?.home?.name ?? 'Home'
+  const awayScore: number | null = linescore?.teams?.away?.runs ?? null
+  const homeScore: number | null = linescore?.teams?.home?.runs ?? null
+  const inningOrdinal: string | null = linescore?.currentInningOrdinal ?? null
+  const halfInning: string | null = linescore?.inningHalf ?? null
+  const outs: number | null = linescore?.outs ?? null
 
   return {
     gamePk: gameData?.game?.pk ?? null,
@@ -249,11 +334,12 @@ function summarizeGameState(feed) {
   }
 }
 
-export function buildScoreCardFromScheduleGame(game) {
-  const homeAbbreviation = game?.teams?.home?.team?.abbreviation ?? game?.teams?.home?.team?.name ?? 'HOME'
-  const awayAbbreviation = game?.teams?.away?.team?.abbreviation ?? game?.teams?.away?.team?.name ?? 'AWAY'
-  const homeScore = game?.teams?.home?.score ?? null
-  const awayScore = game?.teams?.away?.score ?? null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function buildScoreCardFromScheduleGame(game: Record<string, any>): ScoreCard {
+  const homeAbbreviation: string = game?.teams?.home?.team?.abbreviation ?? game?.teams?.home?.team?.name ?? 'HOME'
+  const awayAbbreviation: string = game?.teams?.away?.team?.abbreviation ?? game?.teams?.away?.team?.name ?? 'AWAY'
+  const homeScore: number | null = game?.teams?.home?.score ?? null
+  const awayScore: number | null = game?.teams?.away?.score ?? null
 
   return {
     gamePk: game?.gamePk ?? null,
@@ -284,22 +370,25 @@ export function buildScoreCardFromScheduleGame(game) {
   }
 }
 
-export async function getLiveScoreCardsByDate({ date, gameType = 'R' }) {
+export async function getLiveScoreCardsByDate({ date, gameType = 'R' }: { date: string; gameType?: string }) {
   const schedulePayload = await getScheduleByDate({ date, gameType })
-  const scheduledGames = (schedulePayload?.dates ?? []).flatMap((dateEntry) => dateEntry.games ?? [])
-  let oddsLookupMap = new Map()
-  let oddsProvider = null
+  const sp = schedulePayload as { dates?: Array<{ games?: unknown[] }> } | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scheduledGames: any[] = (sp?.dates ?? []).flatMap((dateEntry) => dateEntry.games ?? [])
+  let oddsLookupMap = new Map<string, OddsEntry>()
+  let oddsProvider: string | null = null
 
   try {
     const oddsPayload = await getCurrentMlbOdds()
     oddsLookupMap = oddsPayload.oddsByLookupKey
     oddsProvider = oddsPayload.provider
-  } catch (error) {
+  } catch (_error) {
     oddsProvider = null
   }
 
-  const cards = await Promise.all(
-    scheduledGames.map(async (game) => {
+  const cards: ScoreCard[] = await Promise.all(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    scheduledGames.map(async (game: any) => {
       const fallbackCard = buildScoreCardFromScheduleGame(game)
       const oddsLookup = oddsLookupMap.get(
         buildOddsLookupKey({
@@ -313,13 +402,14 @@ export async function getLiveScoreCardsByDate({ date, gameType = 'R' }) {
         const feed = await getGameFeed({ gamePk: game.gamePk })
         return attachOddsToCard({
           ...fallbackCard,
-          ...summarizeGameState(feed),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...summarizeGameState(feed as Record<string, any>),
           gameDate: game?.gameDate ?? fallbackCard.gameDate,
-        }, oddsLookup)
+        } as ScoreCard, oddsLookup)
       } catch (error) {
         return attachOddsToCard({
           ...fallbackCard,
-          feedError: error.message,
+          feedError: (error as Error).message,
         }, oddsLookup)
       }
     })
@@ -334,7 +424,7 @@ export async function getLiveScoreCardsByDate({ date, gameType = 'R' }) {
   }
 }
 
-export function buildFeaturedGameSummary(cards) {
+export function buildFeaturedGameSummary(cards: ScoreCard[]): ScoreBox | null {
   const featured =
     cards.find((card) => card.statusCode === 'L') ??
     cards.find((card) => card.statusCode === 'P') ??

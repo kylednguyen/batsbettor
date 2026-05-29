@@ -1,6 +1,11 @@
+import type { ChatMessage as ChatMessageType } from '../types'
 import { ChatMessage } from './ChatMessage'
 
-export function ChatWindow({ messages }) {
+interface ChatWindowProps {
+  messages: ChatMessageType[]
+}
+
+export function ChatWindow({ messages }: ChatWindowProps) {
   return (
     <section className="chat-stream">
       {messages.map((message) => (

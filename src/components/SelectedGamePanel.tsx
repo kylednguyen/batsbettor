@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ScoreCard, MlbFeedPayload, StatEntry, PitchEvent, PitchLocation, MlbPerson, MlbTeam } from '../types'
+import { BaseballDiamond as _BaseballDiamond, MiniBaseballDiamond } from './BaseballDiamond'
 
-import { BaseballDiamond, MiniBaseballDiamond } from './BaseballDiamond'
-
-const PITCH_CODE_LABELS = {
+const PITCH_CODE_LABELS: Record<string, string> = {
   B: 'Ball',
   C: 'Called Strike',
   F: 'Foul',
@@ -10,7 +10,7 @@ const PITCH_CODE_LABELS = {
   X: 'In Play',
 }
 
-function formatTime(value) {
+function formatTime(value: string | null | undefined): string | null {
   if (!value) return null
   return new Date(value).toLocaleTimeString([], {
     hour: 'numeric',
@@ -18,39 +18,39 @@ function formatTime(value) {
   })
 }
 
-function formatName(person) {
+function formatName(person: MlbPerson | null | undefined): string | null {
   return person?.fullName || null
 }
 
-function formatRecord(record) {
+function formatRecord(record: { wins?: number; losses?: number } | null | undefined): string | null {
   const wins = record?.wins
   const losses = record?.losses
   if (wins === null || wins === undefined || losses === null || losses === undefined) return null
   return `${wins}-${losses}`
 }
 
-function formatStatLine(stats) {
+function formatStatLine(stats: Record<string, number | string | undefined | null> | null | undefined): string | null {
   if (!stats) return null
   const hits = stats.hits
   const atBats = stats.atBats
   if (hits === undefined || hits === null || atBats === undefined || atBats === null) return null
 
   const suffixes = [
-    stats.homeRuns > 0 ? `${stats.homeRuns} HR` : null,
-    stats.rbi > 0 ? `${stats.rbi} RBI` : null,
-    stats.baseOnBalls > 0 ? `${stats.baseOnBalls} BB` : null,
+    (stats.homeRuns as number) > 0 ? `${stats.homeRuns} HR` : null,
+    (stats.rbi as number) > 0 ? `${stats.rbi} RBI` : null,
+    (stats.baseOnBalls as number) > 0 ? `${stats.baseOnBalls} BB` : null,
   ].filter(Boolean)
 
   return [`${hits}-${atBats}`, ...suffixes].join(' • ')
 }
 
-function formatArrowInning(halfInning, inningOrdinal) {
+function formatArrowInning(halfInning: string | null | undefined, inningOrdinal: string | null | undefined): string | null {
   if (!halfInning || !inningOrdinal) return null
   const arrow = String(halfInning).toLowerCase().includes('top') ? '↑' : '↓'
   return `${arrow} ${inningOrdinal}`
 }
 
-function formatOrdinals(value) {
+function formatOrdinals(value: number | string | null | undefined): string | null {
   if (value === null || value === undefined) return null
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return String(value)
@@ -61,7 +61,7 @@ function formatOrdinals(value) {
   return `${numeric}th`
 }
 
-function abbreviateName(value) {
+function abbreviateName(value: string | null | undefined): string | null {
   if (!value) return null
   const parts = value.trim().split(/\s+/)
   if (parts.length === 1) return parts[0]
@@ -70,78 +70,119 @@ function abbreviateName(value) {
   return `${first[0]}. ${last}`
 }
 
-function buildHeadshotUrl(personId) {
+function buildHeadshotUrl(personId: number | null | undefined): string | null {
   if (!personId) return null
   return `https://img.mlbstatic.com/mlb-photos/image/upload/w_160,q_auto:best/v1/people/${personId}/headshot/67/current`
 }
 
-function buildTeamLogoUrl(teamId) {
+function buildTeamLogoUrl(teamId: number | null | undefined): string | null {
   if (!teamId) return null
   return `https://www.mlbstatic.com/team-logos/${teamId}.svg`
 }
 
-function uniqueValues(values) {
-  return [...new Set((values ?? []).filter(Boolean))]
+function uniqueValues<T>(values: (T | null | undefined)[] | null | undefined): T[] {
+  return [...new Set((values ?? []).filter((v): v is T => v !== null && v !== undefined))]
 }
 
-function pickStatEntries(statMap, labels) {
+function pickStatEntries(
+  statMap: Record<string, unknown> | null | undefined,
+  labels: [string, string][]
+): StatEntry[] {
   return labels
     .map(([label, key]) => {
       const value = statMap?.[key]
       if (value === null || value === undefined || value === '' || value === '.---' || value === '-.--') {
         return null
       }
-      return { label, value }
+      return { label, value: value as string | number }
     })
-    .filter(Boolean)
+    .filter((entry): entry is StatEntry => entry !== null)
 }
 
-function findPlayer(feed, playerId) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findPlayer(feed: MlbFeedPayload | null, playerId: number | undefined): Record<string, any> | null {
   const awayPlayers = feed?.liveData?.boxscore?.teams?.away?.players ?? {}
   const homePlayers = feed?.liveData?.boxscore?.teams?.home?.players ?? {}
   return awayPlayers[`ID${playerId}`] ?? homePlayers[`ID${playerId}`] ?? null
 }
 
-function getStatusBucket(statusCode, statusText) {
+type StatusBucket = 'final' | 'live' | 'scheduled' | 'other'
+
+function getStatusBucket(statusCode: string | null | undefined, statusText: string | null | undefined): StatusBucket {
   if (statusCode === 'F' || /final|completed/i.test(statusText || '')) return 'final'
   if (statusCode === 'L' || /in progress|live/i.test(statusText || '')) return 'live'
   if (statusCode === 'P' || /scheduled|pre-game|pregame/i.test(statusText || '')) return 'scheduled'
   return 'other'
 }
 
-function normalizePitchResult(event) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizePitchResult(event: Record<string, any> | null | undefined): string | null {
   const detailText = event?.details?.description || PITCH_CODE_LABELS[event?.details?.code] || event?.result || null
   if (!detailText) return null
   return String(detailText).toUpperCase()
 }
 
-function buildInningRows(linescore, awayAbbreviation, homeAbbreviation) {
+interface InningRows {
+  inningLabels: (string | number)[]
+  rows: Array<{
+    team: string | null | undefined
+    inningRuns: (number | string)[]
+    totals: Record<string, unknown>
+  }>
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildInningRows(linescore: Record<string, any> | null | undefined, awayAbbreviation: string | null | undefined, homeAbbreviation: string | null | undefined): InningRows | null {
   const innings = linescore?.innings ?? []
   if (innings.length === 0) return null
 
-  const inningLabels = innings.map((inning) => inning.ordinalNum || inning.num)
-  const awayRuns = innings.map((inning) => inning.away?.runs ?? '')
-  const homeRuns = innings.map((inning) => inning.home?.runs ?? '')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inningLabels = innings.map((inning: any) => inning.ordinalNum || inning.num)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const awayRuns = innings.map((inning: any) => inning.away?.runs ?? '')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const homeRuns = innings.map((inning: any) => inning.home?.runs ?? '')
   const totals = linescore?.teams ?? {}
 
   return {
     inningLabels,
     rows: [
-      {
-        team: awayAbbreviation,
-        inningRuns: awayRuns,
-        totals: totals.away ?? {},
-      },
-      {
-        team: homeAbbreviation,
-        inningRuns: homeRuns,
-        totals: totals.home ?? {},
-      },
+      { team: awayAbbreviation, inningRuns: awayRuns, totals: totals.away ?? {} },
+      { team: homeAbbreviation, inningRuns: homeRuns, totals: totals.home ?? {} },
     ],
   }
 }
 
-function buildLiveContext(feed) {
+interface LiveContext {
+  inningState: string | null
+  countEntries: StatEntry[]
+  pitcherName: string | null
+  pitcherStats: StatEntry[]
+  pitcherCount: number | null
+  pitcherThrows: string | null
+  pitcherHeadshot: string | null
+  pitcherEra: string | null
+  batterName: string | null
+  batterStats: StatEntry[]
+  batterLine: string | null
+  batterSide: string | null
+  batterHeadshot: string | null
+  baseState: string | null
+  rawBaseState: string
+  balls: number | null
+  strikes: number | null
+  outs: number | null
+  outsSummary: string | null
+  onDeck: string | null
+  lastEvent: string | null
+  pitchHistory: PitchEvent[]
+  pitchLocation: PitchLocation | null
+  latestPitchLabel: string | null
+  latestPitchType: string | null
+  latestPitchVelocity: number | null
+}
+
+function buildLiveContext(feed: MlbFeedPayload | null): LiveContext {
   const linescore = feed?.liveData?.linescore
   const currentPlay = feed?.liveData?.plays?.currentPlay
   const offense = linescore?.offense ?? {}
@@ -172,12 +213,14 @@ function buildLiveContext(feed) {
     offense?.first ? `1st: ${offense.first.fullName}` : null,
     offense?.second ? `2nd: ${offense.second.fullName}` : null,
     offense?.third ? `3rd: ${offense.third.fullName}` : null,
-  ].filter(Boolean)
+  ].filter(Boolean) as string[]
 
-  const pitchEvents = (currentPlay?.playEvents ?? []).filter((event) => event?.isPitch)
-  const pitchHistory = pitchEvents
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pitchEvents = (currentPlay?.playEvents ?? []).filter((event: any) => event?.isPitch)
+  const pitchHistory: PitchEvent[] = pitchEvents
     .slice(-6)
-    .map((event) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((event: any) => ({
       id: event?.playId ?? `${event?.pitchNumber ?? Math.random()}`,
       number: event?.pitchNumber ?? null,
       result: normalizePitchResult(event),
@@ -186,7 +229,8 @@ function buildLiveContext(feed) {
       x: event?.pitchData?.coordinates?.pX,
       z: event?.pitchData?.coordinates?.pZ,
     }))
-    .filter((event) => event.result || event.pitchType || event.velocity || (event.x !== undefined && event.z !== undefined))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((event: any) => event.result || event.pitchType || event.velocity || (event.x !== undefined && event.z !== undefined))
 
   const lastEvent =
     currentPlay?.result?.description ||
@@ -194,19 +238,19 @@ function buildLiveContext(feed) {
     currentPlay?.result?.event ||
     null
 
-  const latestPitch = [...(currentPlay?.playEvents ?? [])]
-    .reverse()
-    .find((event) => event?.isPitch && event?.pitchData?.coordinates?.pX !== undefined && event?.pitchData?.coordinates?.pZ !== undefined)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const latestPitch = [...(currentPlay?.playEvents ?? [])].reverse().find((event: any) =>
+    event?.isPitch && event?.pitchData?.coordinates?.pX !== undefined && event?.pitchData?.coordinates?.pZ !== undefined
+  )
 
-  const latestTaggedPitch = [...(currentPlay?.playEvents ?? [])]
-    .reverse()
-    .find((event) => event?.isPitch)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const latestTaggedPitch = [...(currentPlay?.playEvents ?? [])].reverse().find((event: any) => event?.isPitch)
 
-  const pitcherCount = pitcherPlayer?.stats?.pitching?.numberOfPitches ?? null
+  const pitcherCount: number | null = pitcherPlayer?.stats?.pitching?.numberOfPitches ?? null
   const batterLine = formatStatLine(batterPlayer?.stats?.batting)
-  const pitcherEra = pitcherPlayer?.seasonStats?.pitching?.era ?? pitcherPlayer?.stats?.pitching?.era ?? null
-  const onDeck = offense?.onDeck?.fullName ?? null
-  const outLabel =
+  const pitcherEra: string | null = pitcherPlayer?.seasonStats?.pitching?.era ?? pitcherPlayer?.stats?.pitching?.era ?? null
+  const onDeck: string | null = offense?.onDeck?.fullName ?? null
+  const _outLabel =
     linescore?.outs !== undefined && linescore?.outs !== null
       ? `${formatOrdinals(linescore.outs + 1)?.replace('1st', '1 out').replace('2nd', '2 outs').replace('3rd', '3 outs')}`
       : null
@@ -217,16 +261,8 @@ function buildLiveContext(feed) {
         ? formatArrowInning(linescore.inningHalf, linescore.currentInningOrdinal)
         : null,
     countEntries: pickStatEntries(
-      {
-        balls: linescore?.balls,
-        strikes: linescore?.strikes,
-        outs: linescore?.outs,
-      },
-      [
-        ['Balls', 'balls'],
-        ['Strikes', 'strikes'],
-        ['Outs', 'outs'],
-      ]
+      { balls: linescore?.balls, strikes: linescore?.strikes, outs: linescore?.outs },
+      [['Balls', 'balls'], ['Strikes', 'strikes'], ['Outs', 'outs']]
     ),
     pitcherName: formatName(pitcher),
     pitcherStats,
@@ -258,10 +294,7 @@ function buildLiveContext(feed) {
         ? {
             x: latestPitch.pitchData.coordinates.pX,
             z: latestPitch.pitchData.coordinates.pZ,
-            pitchType:
-              latestPitch?.details?.type?.description ??
-              latestPitch?.details?.type ??
-              null,
+            pitchType: latestPitch?.details?.type?.description ?? latestPitch?.details?.type ?? null,
             velocity: latestPitch?.pitchData?.startSpeed ?? null,
           }
         : null,
@@ -278,13 +311,30 @@ function buildLiveContext(feed) {
   }
 }
 
-function buildBatterTable(teamBoxscore, abbreviation) {
+interface BatterRow {
+  id: string | number
+  name: string | null
+  position: string | null
+  orderSlot: number | null
+  roleLabel: string | null
+  isSubstitute: boolean
+  values: Record<string, unknown>
+}
+
+interface BatterTable {
+  team: string | null | undefined
+  rows: BatterRow[]
+  totals: Record<string, unknown>
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildBatterTable(teamBoxscore: Record<string, any> | null | undefined, abbreviation: string | null | undefined): BatterTable | null {
   if (!teamBoxscore) return null
 
-  const lineupIds = teamBoxscore.batters ?? []
-  const playerMap = teamBoxscore.players ?? {}
-  const seenPlayers = new Set()
-  const seenSlots = new Set()
+  const lineupIds: number[] = teamBoxscore.batters ?? []
+  const playerMap: Record<string, unknown> = teamBoxscore.players ?? {}
+  const seenPlayers = new Set<number>()
+  const seenSlots = new Set<number>()
 
   const rows = lineupIds
     .filter((playerId) => {
@@ -292,9 +342,11 @@ function buildBatterTable(teamBoxscore, abbreviation) {
       seenPlayers.add(playerId)
       return true
     })
-    .map((playerId) => playerMap[`ID${playerId}`])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((playerId) => (playerMap as Record<string, any>)[`ID${playerId}`])
     .filter(Boolean)
-    .map((player) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((player: any): BatterRow | null => {
       const batting = player?.stats?.batting ?? null
       const battingOrder = player?.battingOrder ?? null
       const orderSlot =
@@ -312,16 +364,14 @@ function buildBatterTable(teamBoxscore, abbreviation) {
         avg: batting?.avg,
       }
 
-      const hasStats = Object.values(values).some((value) => value !== null && value !== undefined && value !== '' && value !== '.---')
+      const hasStats = Object.values(values).some((v) => v !== null && v !== undefined && v !== '' && v !== '.---')
       if (!hasStats) return null
 
       const isSubstitute =
         Boolean(player?.gameStatus?.isSubstitute) ||
         (orderSlot !== null && seenSlots.has(orderSlot))
 
-      if (orderSlot !== null) {
-        seenSlots.add(orderSlot)
-      }
+      if (orderSlot !== null) seenSlots.add(orderSlot)
 
       return {
         id: player?.person?.id ?? `${abbreviation}-${player?.person?.fullName}`,
@@ -333,7 +383,7 @@ function buildBatterTable(teamBoxscore, abbreviation) {
         values,
       }
     })
-    .filter(Boolean)
+    .filter((row): row is BatterRow => row !== null)
 
   if (rows.length === 0) return null
 
@@ -353,16 +403,32 @@ function buildBatterTable(teamBoxscore, abbreviation) {
   }
 }
 
-function buildPitcherTable(teamBoxscore, abbreviation) {
+interface PitcherRow {
+  id: string | number
+  name: string | null
+  hand: string | null
+  values: Record<string, unknown>
+}
+
+interface PitcherTable {
+  team: string | null | undefined
+  rows: PitcherRow[]
+  totals: Record<string, unknown>
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildPitcherTable(teamBoxscore: Record<string, any> | null | undefined, abbreviation: string | null | undefined): PitcherTable | null {
   if (!teamBoxscore) return null
 
-  const pitcherIds = uniqueValues(teamBoxscore.pitchers)
-  const playerMap = teamBoxscore.players ?? {}
+  const pitcherIds = uniqueValues<number>(teamBoxscore.pitchers)
+  const playerMap: Record<string, unknown> = teamBoxscore.players ?? {}
 
   const rows = pitcherIds
-    .map((playerId) => playerMap[`ID${playerId}`])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((playerId) => (playerMap as Record<string, any>)[`ID${playerId}`])
     .filter(Boolean)
-    .map((player) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((player: any): PitcherRow | null => {
       const pitching = player?.stats?.pitching ?? null
       const values = {
         ip: pitching?.inningsPitched,
@@ -376,7 +442,7 @@ function buildPitcherTable(teamBoxscore, abbreviation) {
         whip: pitching?.whip ?? player?.seasonStats?.pitching?.whip,
       }
 
-      const hasStats = Object.values(values).some((value) => value !== null && value !== undefined && value !== '' && value !== '.---' && value !== '-.--')
+      const hasStats = Object.values(values).some((v) => v !== null && v !== undefined && v !== '' && v !== '.---' && v !== '-.--')
       if (!hasStats) return null
 
       return {
@@ -386,7 +452,7 @@ function buildPitcherTable(teamBoxscore, abbreviation) {
         values,
       }
     })
-    .filter(Boolean)
+    .filter((row): row is PitcherRow => row !== null)
 
   if (rows.length === 0) return null
 
@@ -407,13 +473,40 @@ function buildPitcherTable(teamBoxscore, abbreviation) {
   }
 }
 
-function buildBoxScoreContext(feed, selectedCard) {
+interface ScoringEvent {
+  id: string
+  inning: string
+  summary: string | null
+  awayScore: number | null
+  homeScore: number | null
+  battingTeam: string | null | undefined
+}
+
+interface BoxScoreTeam {
+  key: string
+  team: string | null | undefined
+  battingTable: BatterTable | null
+  pitchingTable: PitcherTable | null
+}
+
+interface BoxScoreContext {
+  innings: InningRows | null
+  teams: BoxScoreTeam[]
+  battingTables: BatterTable[]
+  battingRows: Array<{ team: string | null | undefined; stats: StatEntry[] }>
+  pitchingRows: Array<{ team: string | null | undefined; stats: StatEntry[] }>
+  decisions: string[]
+  scoringEvents: ScoringEvent[]
+}
+
+function buildBoxScoreContext(feed: MlbFeedPayload | null, selectedCard: ScoreCard | null | undefined): BoxScoreContext {
   const linescore = feed?.liveData?.linescore
   const away = feed?.liveData?.boxscore?.teams?.away
   const home = feed?.liveData?.boxscore?.teams?.home
   const decisions = feed?.liveData?.decisions
-  const allPlays = feed?.liveData?.plays?.allPlays ?? []
-  const scoringEvents = allPlays
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allPlays: any[] = feed?.liveData?.plays?.allPlays ?? []
+  const scoringEvents: ScoringEvent[] = allPlays
     .filter((play) => play?.about?.isScoringPlay)
     .map((play, index) => ({
       id: `${play.about?.inning}-${play.about?.halfInning}-${index}`,
@@ -447,86 +540,68 @@ function buildBoxScoreContext(feed, selectedCard) {
     battingTables: [
       buildBatterTable(away, selectedCard?.awayAbbreviation),
       buildBatterTable(home, selectedCard?.homeAbbreviation),
-    ].filter(Boolean),
+    ].filter((t): t is BatterTable => t !== null),
     battingRows: [
-      {
-        team: selectedCard?.awayAbbreviation,
-        stats: pickStatEntries(away?.teamStats?.batting, [
-          ['AB', 'atBats'],
-          ['H', 'hits'],
-          ['R', 'runs'],
-          ['RBI', 'rbi'],
-          ['BB', 'baseOnBalls'],
-          ['SO', 'strikeOuts'],
-          ['HR', 'homeRuns'],
-        ]),
-      },
-      {
-        team: selectedCard?.homeAbbreviation,
-        stats: pickStatEntries(home?.teamStats?.batting, [
-          ['AB', 'atBats'],
-          ['H', 'hits'],
-          ['R', 'runs'],
-          ['RBI', 'rbi'],
-          ['BB', 'baseOnBalls'],
-          ['SO', 'strikeOuts'],
-          ['HR', 'homeRuns'],
-        ]),
-      },
+      { team: selectedCard?.awayAbbreviation, stats: pickStatEntries(away?.teamStats?.batting, [['AB', 'atBats'], ['H', 'hits'], ['R', 'runs'], ['RBI', 'rbi'], ['BB', 'baseOnBalls'], ['SO', 'strikeOuts'], ['HR', 'homeRuns']]) },
+      { team: selectedCard?.homeAbbreviation, stats: pickStatEntries(home?.teamStats?.batting, [['AB', 'atBats'], ['H', 'hits'], ['R', 'runs'], ['RBI', 'rbi'], ['BB', 'baseOnBalls'], ['SO', 'strikeOuts'], ['HR', 'homeRuns']]) },
     ],
     pitchingRows: [
-      {
-        team: selectedCard?.awayAbbreviation,
-        stats: pickStatEntries(away?.teamStats?.pitching, [
-          ['IP', 'inningsPitched'],
-          ['H', 'hits'],
-          ['R', 'runs'],
-          ['ER', 'earnedRuns'],
-          ['BB', 'baseOnBalls'],
-          ['SO', 'strikeOuts'],
-          ['Pitches', 'numberOfPitches'],
-        ]),
-      },
-      {
-        team: selectedCard?.homeAbbreviation,
-        stats: pickStatEntries(home?.teamStats?.pitching, [
-          ['IP', 'inningsPitched'],
-          ['H', 'hits'],
-          ['R', 'runs'],
-          ['ER', 'earnedRuns'],
-          ['BB', 'baseOnBalls'],
-          ['SO', 'strikeOuts'],
-          ['Pitches', 'numberOfPitches'],
-        ]),
-      },
+      { team: selectedCard?.awayAbbreviation, stats: pickStatEntries(away?.teamStats?.pitching, [['IP', 'inningsPitched'], ['H', 'hits'], ['R', 'runs'], ['ER', 'earnedRuns'], ['BB', 'baseOnBalls'], ['SO', 'strikeOuts'], ['Pitches', 'numberOfPitches']]) },
+      { team: selectedCard?.homeAbbreviation, stats: pickStatEntries(home?.teamStats?.pitching, [['IP', 'inningsPitched'], ['H', 'hits'], ['R', 'runs'], ['ER', 'earnedRuns'], ['BB', 'baseOnBalls'], ['SO', 'strikeOuts'], ['Pitches', 'numberOfPitches']]) },
     ],
     decisions: [
       decisions?.winner ? `W: ${decisions.winner.fullName}` : null,
       decisions?.loser ? `L: ${decisions.loser.fullName}` : null,
       decisions?.save ? `SV: ${decisions.save.fullName}` : null,
-    ].filter(Boolean),
+    ].filter((d): d is string => d !== null),
     scoringEvents,
   }
 }
 
-function buildScheduledContext(feed) {
+interface ScheduledContext {
+  previewItems: Array<{ label: string; value: string }>
+}
+
+function buildScheduledContext(feed: MlbFeedPayload | null): ScheduledContext {
   const gameData = feed?.gameData ?? {}
   const probablePitchers = gameData?.probablePitchers ?? {}
-  const venue = gameData?.venue?.name ?? null
+  const venue: string | null = gameData?.venue?.name ?? null
   const previewItems = [
     venue ? { label: 'Venue', value: venue } : null,
-    probablePitchers?.away?.fullName ? { label: 'Away probable', value: probablePitchers.away.fullName } : null,
-    probablePitchers?.home?.fullName ? { label: 'Home probable', value: probablePitchers.home.fullName } : null,
-  ].filter(Boolean)
+    probablePitchers?.away?.fullName ? { label: 'Away probable', value: probablePitchers.away.fullName as string } : null,
+    probablePitchers?.home?.fullName ? { label: 'Home probable', value: probablePitchers.home.fullName as string } : null,
+  ].filter((item): item is { label: string; value: string } => item !== null)
 
   return { previewItems }
 }
 
-function AssetImage({ alt, className, src }) {
-  return src ? <img alt={alt} className={className} loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} src={src} /> : null
+// ---- Sub-components ----
+
+interface AssetImageProps {
+  alt: string
+  className?: string
+  src: string | null
 }
 
-function TeamBadge({ abbreviation, logoUrl, teamName }) {
+function AssetImage({ alt, className, src }: AssetImageProps) {
+  return src ? (
+    <img
+      alt={alt}
+      className={className}
+      loading="lazy"
+      onError={(event) => { event.currentTarget.style.display = 'none' }}
+      src={src}
+    />
+  ) : null
+}
+
+interface TeamBadgeProps {
+  abbreviation: string | null | undefined
+  logoUrl: string | null
+  teamName: string | null | undefined
+}
+
+function TeamBadge({ abbreviation, logoUrl, teamName }: TeamBadgeProps) {
   return (
     <div className="team-badge">
       <AssetImage alt={`${teamName} logo`} className="team-badge__logo" src={logoUrl} />
@@ -535,7 +610,11 @@ function TeamBadge({ abbreviation, logoUrl, teamName }) {
   )
 }
 
-function StatPills({ entries }) {
+interface StatPillsProps {
+  entries: StatEntry[] | null | undefined
+}
+
+function StatPills({ entries }: StatPillsProps) {
   if (!entries || entries.length === 0) return null
   return (
     <div className="detail-pill-grid">
@@ -549,7 +628,11 @@ function StatPills({ entries }) {
   )
 }
 
-function BoxScoreTable({ innings }) {
+interface BoxScoreTableProps {
+  innings: InningRows | null | undefined
+}
+
+function BoxScoreTable({ innings }: BoxScoreTableProps) {
   if (!innings) return null
   const gridTemplateColumns = `68px repeat(${innings.inningLabels.length}, minmax(28px, 1fr)) 34px 34px 34px`
   return (
@@ -564,26 +647,31 @@ function BoxScoreTable({ innings }) {
         <span>E</span>
       </div>
       {innings.rows.map((row) => (
-        <div className="boxscore-row" key={row.team} style={{ gridTemplateColumns }}>
+        <div className="boxscore-row" key={String(row.team)} style={{ gridTemplateColumns }}>
           <span>{row.team}</span>
           {row.inningRuns.map((value, index) => (
             <span key={`${row.team}-${index}`}>{value}</span>
           ))}
-          <strong>{row.totals.runs ?? ''}</strong>
-          <strong>{row.totals.hits ?? ''}</strong>
-          <strong>{row.totals.errors ?? ''}</strong>
+          <strong>{(row.totals as Record<string, unknown>).runs as string ?? ''}</strong>
+          <strong>{(row.totals as Record<string, unknown>).hits as string ?? ''}</strong>
+          <strong>{(row.totals as Record<string, unknown>).errors as string ?? ''}</strong>
         </div>
       ))}
     </div>
   )
 }
 
-function formatTableValue(value) {
+function formatTableValue(value: unknown): string {
   if (value === null || value === undefined || value === '' || value === '.---') return ''
-  return value
+  return String(value)
 }
 
-function TeamStatRows({ title, rows }) {
+interface TeamStatRowsProps {
+  title: string
+  rows: Array<{ team: string | null | undefined; stats: StatEntry[] }>
+}
+
+function TeamStatRows({ title, rows }: TeamStatRowsProps) {
   const visibleRows = rows?.filter((row) => row.stats && row.stats.length > 0) ?? []
   if (visibleRows.length === 0) return null
   return (
@@ -601,39 +689,32 @@ function TeamStatRows({ title, rows }) {
   )
 }
 
-function BatterLineTables({ tables }) {
-  if (!tables || tables.length === 0) return null
+interface BatterLineTablesProps {
+  tables: BatterTable[] | null | undefined
+}
 
+function BatterLineTables({ tables }: BatterLineTablesProps) {
+  if (!tables || tables.length === 0) return null
   return (
     <section className="detail-section">
       <p className="section-label">Batters</p>
       <div className="batter-table-grid">
         {tables.map((table) => (
-          <article className="detail-card batter-table-card" key={table.team}>
+          <article className="detail-card batter-table-card" key={String(table.team)}>
             <div className="batter-table-card__header">
               <h3>{table.team}</h3>
               <span>Box score</span>
             </div>
-
             <div className="batter-table">
               <div className="batter-table__row batter-table__row--header">
                 <span>Player</span>
-                <span>AB</span>
-                <span>H</span>
-                <span>R</span>
-                <span>RBI</span>
-                <span>BB</span>
-                <span>SO</span>
-                <span>HR</span>
-                <span>AVG</span>
+                <span>AB</span><span>H</span><span>R</span><span>RBI</span>
+                <span>BB</span><span>SO</span><span>HR</span><span>AVG</span>
               </div>
-
               {table.rows.map((row) => (
-                <div className={`batter-table__row${row.isSubstitute ? ' batter-table__row--substitute' : ''}`} key={row.id}>
+                <div className={`batter-table__row${row.isSubstitute ? ' batter-table__row--substitute' : ''}`} key={String(row.id)}>
                   <div className="batter-table__player">
-                    <strong>
-                      <span>{row.name}</span>
-                    </strong>
+                    <strong><span>{row.name}</span></strong>
                     {row.isSubstitute ? (
                       <span>{row.roleLabel ? `Sub • ${row.roleLabel}` : 'Substitute'}</span>
                     ) : row.position ? (
@@ -650,11 +731,8 @@ function BatterLineTables({ tables }) {
                   <span>{formatTableValue(row.values.avg)}</span>
                 </div>
               ))}
-
               <div className="batter-table__row batter-table__row--totals">
-                <div className="batter-table__player">
-                  <strong>Totals</strong>
-                </div>
+                <div className="batter-table__player"><strong>Totals</strong></div>
                 <strong>{formatTableValue(table.totals.ab)}</strong>
                 <strong>{formatTableValue(table.totals.h)}</strong>
                 <strong>{formatTableValue(table.totals.r)}</strong>
@@ -672,36 +750,30 @@ function BatterLineTables({ tables }) {
   )
 }
 
-function PitcherLineTables({ tables }) {
-  if (!tables || tables.length === 0) return null
+interface PitcherLineTablesProps {
+  tables: PitcherTable[] | null | undefined
+}
 
+function PitcherLineTables({ tables }: PitcherLineTablesProps) {
+  if (!tables || tables.length === 0) return null
   return (
     <section className="detail-section">
       <p className="section-label">Pitchers</p>
       <div className="pitcher-table-grid">
         {tables.map((table) => (
-          <article className="detail-card batter-table-card" key={table.team}>
+          <article className="detail-card batter-table-card" key={String(table.team)}>
             <div className="batter-table-card__header">
               <h3>{table.team}</h3>
               <span>Box score</span>
             </div>
-
             <div className="batter-table pitcher-table">
               <div className="batter-table__row batter-table__row--header pitcher-table__row">
                 <span>Pitcher</span>
-                <span>IP</span>
-                <span>H</span>
-                <span>R</span>
-                <span>ER</span>
-                <span>K</span>
-                <span>BB</span>
-                <span>HR</span>
-                <span>ERA</span>
-                <span>WHIP</span>
+                <span>IP</span><span>H</span><span>R</span><span>ER</span>
+                <span>K</span><span>BB</span><span>HR</span><span>ERA</span><span>WHIP</span>
               </div>
-
               {table.rows.map((row) => (
-                <div className="batter-table__row pitcher-table__row" key={row.id}>
+                <div className="batter-table__row pitcher-table__row" key={String(row.id)}>
                   <div className="batter-table__player">
                     <strong>{row.name}</strong>
                     {row.hand ? <span>{row.hand}HP</span> : null}
@@ -717,11 +789,8 @@ function PitcherLineTables({ tables }) {
                   <span>{formatTableValue(row.values.whip)}</span>
                 </div>
               ))}
-
               <div className="batter-table__row batter-table__row--totals pitcher-table__row">
-                <div className="batter-table__player">
-                  <strong>Totals</strong>
-                </div>
+                <div className="batter-table__player"><strong>Totals</strong></div>
                 <strong>{formatTableValue(table.totals.ip)}</strong>
                 <strong>{formatTableValue(table.totals.h)}</strong>
                 <strong>{formatTableValue(table.totals.r)}</strong>
@@ -740,9 +809,14 @@ function PitcherLineTables({ tables }) {
   )
 }
 
-function TeamToggle({ activeTeamKey, teams, onChange }) {
-  if (!teams || teams.length < 2) return null
+interface TeamToggleProps {
+  activeTeamKey: string
+  teams: BoxScoreTeam[]
+  onChange: (key: string) => void
+}
 
+function TeamToggle({ activeTeamKey, teams, onChange }: TeamToggleProps) {
+  if (!teams || teams.length < 2) return null
   return (
     <div className="team-toggle" role="tablist" aria-label="Box score team view">
       {teams.map((team) => (
@@ -761,7 +835,13 @@ function TeamToggle({ activeTeamKey, teams, onChange }) {
   )
 }
 
-function ScoringSummary({ events, awayAbbreviation, homeAbbreviation }) {
+interface ScoringSummaryProps {
+  events: ScoringEvent[] | null | undefined
+  awayAbbreviation: string | null | undefined
+  homeAbbreviation: string | null | undefined
+}
+
+function ScoringSummary({ events, awayAbbreviation, homeAbbreviation }: ScoringSummaryProps) {
   if (!events || events.length === 0) return null
   return (
     <section className="detail-section">
@@ -791,47 +871,58 @@ function ScoringSummary({ events, awayAbbreviation, homeAbbreviation }) {
   )
 }
 
-function DetailTabs({ activeTab, onChange, tabs }) {
+interface Tab {
+  id: string
+  label: string
+}
+
+interface DetailTabsProps {
+  activeTab: string
+  onChange: (id: string) => void
+  tabs: Tab[]
+}
+
+function DetailTabs({ activeTab, onChange, tabs }: DetailTabsProps) {
   if (!tabs || tabs.length < 2) return null
   return (
-    <div
-      className="mt-4 border-t border-white/8 pt-3"
-      role="tablist"
-      aria-label="Selected game views"
-    >
+    <div className="mt-4 border-t border-white/8 pt-3" role="tablist" aria-label="Selected game views">
       <div className="flex flex-wrap items-end justify-center gap-6">
-      {tabs.map((tab) => (
-        <button
-          type="button"
-          key={tab.id}
-          role="tab"
-          aria-selected={activeTab === tab.id}
-          className={`border-b-2 px-1 pb-2 text-sm font-medium transition ${
-            activeTab === tab.id
-              ? 'border-[rgb(193,41,46)] text-zinc-100'
-              : 'border-transparent text-zinc-400 hover:text-zinc-100'
-          }`}
-          onClick={() => onChange(tab.id)}
-        >
-          {tab.label}
-        </button>
-      ))}
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={`border-b-2 px-1 pb-2 text-sm font-medium transition ${
+              activeTab === tab.id
+                ? 'border-[rgb(193,41,46)] text-zinc-100'
+                : 'border-transparent text-zinc-400 hover:text-zinc-100'
+            }`}
+            onClick={() => onChange(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
     </div>
   )
 }
 
-function PitchLocationZone({ history = [], onSelectPitch, selectedPitchId }) {
+interface PitchLocationZoneProps {
+  history?: PitchEvent[]
+  onSelectPitch?: (id: string) => void
+  selectedPitchId: string | null
+}
+
+function PitchLocationZone({ history = [], onSelectPitch, selectedPitchId }: PitchLocationZoneProps) {
   if (!history || history.length === 0) return null
-  const pitchTrail = history ?? []
-  const selectedPitch = pitchTrail.find((event) => event.id === selectedPitchId) ?? pitchTrail[pitchTrail.length - 1] ?? null
+  const pitchTrail = history
+  const selectedPitch = pitchTrail.find((e) => e.id === selectedPitchId) ?? pitchTrail[pitchTrail.length - 1] ?? null
   const pitchMeta = [
     selectedPitch?.result,
     selectedPitch?.pitchType,
     selectedPitch?.velocity ? `${Math.round(selectedPitch.velocity)} MPH` : null,
-  ]
-    .filter(Boolean)
-    .join(' • ')
+  ].filter(Boolean).join(' • ')
 
   return (
     <div className="detail-card strikezone-card scorecast-zone-card">
@@ -864,7 +955,14 @@ function PitchLocationZone({ history = [], onSelectPitch, selectedPitchId }) {
   )
 }
 
-function CountDots({ active, total = 3, label, tone = 'accent' }) {
+interface CountDotsProps {
+  active: number | null | undefined
+  total?: number
+  label: string
+  tone?: 'accent' | 'green' | 'red'
+}
+
+function CountDots({ active, total = 3, label, tone = 'accent' }: CountDotsProps) {
   if (active === null || active === undefined) return null
   return (
     <div className="count-group">
@@ -881,31 +979,41 @@ function CountDots({ active, total = 3, label, tone = 'accent' }) {
   )
 }
 
-function PitchHistoryRow({ history, onSelectPitch, selectedPitchId }) {
+interface PitchHistoryRowProps {
+  history: PitchEvent[] | null | undefined
+  onSelectPitch?: (id: string) => void
+  selectedPitchId: string | null
+}
+
+function PitchHistoryRow({ history, onSelectPitch, selectedPitchId }: PitchHistoryRowProps) {
   if (!history || history.length === 0) return null
   return (
     <div className="pitch-history-row">
-      {history
-        .slice()
-        .reverse()
-        .map((pitch, index) => (
-          <button
-            className={`pitch-history-card${index === 0 ? ' pitch-history-card--latest' : ''}${pitch.id === selectedPitchId ? ' pitch-history-card--selected' : ''}`}
-            key={pitch.id}
-            onClick={() => onSelectPitch?.(pitch.id)}
-            type="button"
-          >
-            {pitch.number ? <strong>{pitch.number}</strong> : null}
-            {pitch.result ? <span>{pitch.result}</span> : null}
-            {pitch.pitchType ? <p>{pitch.pitchType.toUpperCase()}</p> : null}
-            {pitch.velocity ? <small>{Math.round(pitch.velocity)} MPH</small> : null}
-          </button>
-        ))}
+      {history.slice().reverse().map((pitch, index) => (
+        <button
+          className={`pitch-history-card${index === 0 ? ' pitch-history-card--latest' : ''}${pitch.id === selectedPitchId ? ' pitch-history-card--selected' : ''}`}
+          key={pitch.id}
+          onClick={() => onSelectPitch?.(pitch.id)}
+          type="button"
+        >
+          {pitch.number ? <strong>{pitch.number}</strong> : null}
+          {pitch.result ? <span>{pitch.result}</span> : null}
+          {pitch.pitchType ? <p>{pitch.pitchType.toUpperCase()}</p> : null}
+          {pitch.velocity ? <small>{Math.round(pitch.velocity)} MPH</small> : null}
+        </button>
+      ))}
     </div>
   )
 }
 
-function ScoreboardHeader({ awayTeam, homeTeam, liveContext, selectedCard }) {
+interface ScoreboardHeaderProps {
+  awayTeam: MlbTeam | null
+  homeTeam: MlbTeam | null
+  liveContext: LiveContext
+  selectedCard: ScoreCard | null | undefined
+}
+
+function ScoreboardHeader({ awayTeam, homeTeam, liveContext, selectedCard }: ScoreboardHeaderProps) {
   const inningSummary = [liveContext.inningState, liveContext.outsSummary].filter(Boolean).join(', ')
   return (
     <div className="detail-card live-scoreboard-header">
@@ -927,7 +1035,15 @@ function ScoreboardHeader({ awayTeam, homeTeam, liveContext, selectedCard }) {
   )
 }
 
-function SelectedGameScorebug({ awayTeam, homeTeam, selectedCard, statusBucket, statusText }) {
+interface SelectedGameScorebugProps {
+  awayTeam: MlbTeam | null
+  homeTeam: MlbTeam | null
+  selectedCard: ScoreCard | null | undefined
+  statusBucket: StatusBucket
+  statusText: string | null
+}
+
+function SelectedGameScorebug({ awayTeam, homeTeam, selectedCard, statusBucket, statusText }: SelectedGameScorebugProps) {
   const awayRecord = formatRecord(awayTeam?.record)
   const homeRecord = formatRecord(homeTeam?.record)
   const centerLabel =
@@ -973,13 +1089,18 @@ function SelectedGameScorebug({ awayTeam, homeTeam, selectedCard, statusBucket, 
   )
 }
 
-function MatchupCard({ awayTeam, homeTeam, liveContext }) {
-  const pitcherLine = liveContext.pitcherStats
-    .map((entry) => `${entry.value} ${entry.label}`)
-    .join(', ')
-  const batterLine = [liveContext.batterLine, liveContext.batterStats.map((entry) => `${entry.value} ${entry.label}`).slice(0, 4).join(', ')]
-    .filter(Boolean)
-    .join(' • ')
+interface MatchupCardProps {
+  awayTeam: MlbTeam | null
+  homeTeam: MlbTeam | null
+  liveContext: LiveContext
+}
+
+function MatchupCard({ liveContext }: MatchupCardProps) {
+  const pitcherLine = liveContext.pitcherStats.map((entry) => `${entry.value} ${entry.label}`).join(', ')
+  const batterLine = [
+    liveContext.batterLine,
+    liveContext.batterStats.map((entry) => `${entry.value} ${entry.label}`).slice(0, 4).join(', '),
+  ].filter(Boolean).join(' • ')
 
   return (
     <div className="detail-card matchup-card">
@@ -1016,15 +1137,26 @@ function MatchupCard({ awayTeam, homeTeam, liveContext }) {
   )
 }
 
-function LiveView({ awayTeam, boxScoreContext, homeTeam, liveContext, selectedCard }) {
-  const [selectedPitchId, setSelectedPitchId] = useState(liveContext.pitchHistory[liveContext.pitchHistory.length - 1]?.id ?? null)
+interface LiveViewProps {
+  awayTeam: MlbTeam | null
+  homeTeam: MlbTeam | null
+  liveContext: LiveContext
+  boxScoreContext: BoxScoreContext | null
+  selectedCard: ScoreCard | null | undefined
+}
+
+function LiveView({ awayTeam, homeTeam, liveContext, boxScoreContext, selectedCard }: LiveViewProps) {
+  const [selectedPitchId, setSelectedPitchId] = useState<string | null>(
+    liveContext.pitchHistory[liveContext.pitchHistory.length - 1]?.id ?? null
+  )
   const selectedPitch =
-    liveContext.pitchHistory.find((pitch) => pitch.id === selectedPitchId) ??
+    liveContext.pitchHistory.find((p) => p.id === selectedPitchId) ??
     liveContext.pitchHistory[liveContext.pitchHistory.length - 1] ??
     null
-  const pitchBannerMeta = [liveContext.latestPitchType, liveContext.latestPitchVelocity ? `${Math.round(liveContext.latestPitchVelocity)} MPH` : null]
-    .filter(Boolean)
-    .join(' • ')
+  const pitchBannerMeta = [
+    liveContext.latestPitchType,
+    liveContext.latestPitchVelocity ? `${Math.round(liveContext.latestPitchVelocity)} MPH` : null,
+  ].filter(Boolean).join(' • ')
 
   useEffect(() => {
     setSelectedPitchId(liveContext.pitchHistory[liveContext.pitchHistory.length - 1]?.id ?? null)
@@ -1043,7 +1175,6 @@ function LiveView({ awayTeam, boxScoreContext, homeTeam, liveContext, selectedCa
               <CountDots active={liveContext.strikes} label="Strikes" tone="red" total={3} />
               <CountDots active={liveContext.outs} label="Outs" tone="red" total={3} />
             </div>
-
             <div className="live-center-card__body">
               {liveContext.pitchLocation || liveContext.pitchHistory.length > 0 ? (
                 <PitchLocationZone
@@ -1085,7 +1216,12 @@ function LiveView({ awayTeam, boxScoreContext, homeTeam, liveContext, selectedCa
   )
 }
 
-function BoxScoreView({ boxScoreContext, title = 'Box score' }) {
+interface BoxScoreViewProps {
+  boxScoreContext: BoxScoreContext
+  title?: string
+}
+
+function BoxScoreView({ boxScoreContext, title = 'Box score' }: BoxScoreViewProps) {
   const [activeTeamKey, setActiveTeamKey] = useState(boxScoreContext?.teams?.[0]?.key ?? 'away')
   const activeTeam =
     boxScoreContext?.teams?.find((team) => team.key === activeTeamKey) ??
@@ -1110,11 +1246,16 @@ function BoxScoreView({ boxScoreContext, title = 'Box score' }) {
   )
 }
 
-function ScheduledView({ scheduledContext, selectedCard }) {
+interface ScheduledViewProps {
+  scheduledContext: ScheduledContext
+  selectedCard: ScoreCard | null | undefined
+}
+
+function ScheduledView({ scheduledContext, selectedCard }: ScheduledViewProps) {
   const previewItems = [
     { label: 'First pitch', value: formatTime(selectedCard?.gameDate) },
     ...(scheduledContext.previewItems ?? []),
-  ].filter((item) => item.value)
+  ].filter((item): item is { label: string; value: string } => item.value !== null && item.value !== undefined)
 
   return (
     <section className="detail-section">
@@ -1133,20 +1274,33 @@ function ScheduledView({ scheduledContext, selectedCard }) {
   )
 }
 
-export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError, today }) {
-  const statusText = gameFeed?.gameData?.status?.detailedState ?? selectedCard?.status ?? null
-  const statusCode = gameFeed?.gameData?.status?.abstractGameCode ?? selectedCard?.statusCode ?? null
+// ScoreBox has a compatible subset of ScoreCard fields; accept both
+export type SelectedCardLike = ScoreCard | import('../types').ScoreBox | null | undefined
+
+export interface SelectedGamePanelProps {
+  gameFeed: MlbFeedPayload | null
+  loading: boolean
+  selectedCard: SelectedCardLike
+  scoreError: string
+  today: string
+}
+
+export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError: _scoreError }: SelectedGamePanelProps) {
+  // Cast to ScoreCard for internal use — ScoreBox has compatible fields
+  const card = selectedCard as ScoreCard | null | undefined
+  const statusText: string | null = gameFeed?.gameData?.status?.detailedState ?? card?.status ?? null
+  const statusCode: string | null = gameFeed?.gameData?.status?.abstractGameCode ?? card?.statusCode ?? null
   const statusBucket = getStatusBucket(statusCode, statusText)
-  const awayTeam = gameFeed?.gameData?.teams?.away ?? null
-  const homeTeam = gameFeed?.gameData?.teams?.home ?? null
+  const awayTeam: MlbTeam | null = gameFeed?.gameData?.teams?.away ?? null
+  const homeTeam: MlbTeam | null = gameFeed?.gameData?.teams?.home ?? null
 
   const [activeTab, setActiveTab] = useState('feed')
 
   const liveContext = statusBucket === 'live' ? buildLiveContext(gameFeed) : null
-  const boxScoreContext = statusBucket !== 'scheduled' && gameFeed ? buildBoxScoreContext(gameFeed, selectedCard) : null
+  const boxScoreContext = statusBucket !== 'scheduled' && gameFeed ? buildBoxScoreContext(gameFeed, card) : null
   const scheduledContext = statusBucket === 'scheduled' ? buildScheduledContext(gameFeed) : null
 
-  const tabs = useMemo(() => {
+  const tabs = useMemo<Tab[]>(() => {
     if (statusBucket === 'live') {
       return [
         { id: 'feed', label: 'Live feed' },
@@ -1154,35 +1308,27 @@ export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError,
         ...(boxScoreContext?.scoringEvents?.length ? [{ id: 'summary', label: 'Scoring summary' }] : []),
       ]
     }
-
     if (statusBucket === 'final') {
       return [
         { id: 'boxscore', label: 'Box score' },
         ...(boxScoreContext?.scoringEvents?.length ? [{ id: 'summary', label: 'Scoring summary' }] : []),
       ]
     }
-
     return []
   }, [boxScoreContext?.scoringEvents?.length, statusBucket])
 
   useEffect(() => {
-    if (statusBucket === 'live') {
-      setActiveTab('feed')
-      return
-    }
-    if (statusBucket === 'final') {
-      setActiveTab('boxscore')
-      return
-    }
+    if (statusBucket === 'live') { setActiveTab('feed'); return }
+    if (statusBucket === 'final') { setActiveTab('boxscore'); return }
     setActiveTab('feed')
-  }, [selectedCard?.gamePk, statusBucket])
+  }, [card?.gamePk, statusBucket])
 
   return (
     <section className="score-box hero-score-box">
       <SelectedGameScorebug
         awayTeam={awayTeam}
         homeTeam={homeTeam}
-        selectedCard={selectedCard}
+        selectedCard={card}
         statusBucket={statusBucket}
         statusText={statusText}
       />
@@ -1190,7 +1336,7 @@ export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError,
       {!loading ? <DetailTabs activeTab={activeTab} onChange={setActiveTab} tabs={tabs} /> : null}
 
       {loading ? <div className="detail-card"><p>Loading game detail...</p></div> : null}
-      {!loading && statusBucket === 'final' && activeTab === 'boxscore' ? <BoxScoreView boxScoreContext={boxScoreContext} title="Final box score" /> : null}
+      {!loading && statusBucket === 'final' && activeTab === 'boxscore' && boxScoreContext ? <BoxScoreView boxScoreContext={boxScoreContext} title="Final box score" /> : null}
       {!loading && statusBucket === 'final' && activeTab === 'summary' ? (
         <ScoringSummary
           awayAbbreviation={boxScoreContext?.innings?.rows?.[0]?.team}
@@ -1198,16 +1344,16 @@ export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError,
           homeAbbreviation={boxScoreContext?.innings?.rows?.[1]?.team}
         />
       ) : null}
-      {!loading && statusBucket === 'live' && activeTab === 'feed' ? (
+      {!loading && statusBucket === 'live' && activeTab === 'feed' && liveContext ? (
         <LiveView
           awayTeam={awayTeam}
           boxScoreContext={boxScoreContext}
           homeTeam={homeTeam}
           liveContext={liveContext}
-          selectedCard={selectedCard}
+          selectedCard={card}
         />
       ) : null}
-      {!loading && statusBucket === 'live' && activeTab === 'boxscore' ? <BoxScoreView boxScoreContext={boxScoreContext} title="Current box score" /> : null}
+      {!loading && statusBucket === 'live' && activeTab === 'boxscore' && boxScoreContext ? <BoxScoreView boxScoreContext={boxScoreContext} title="Current box score" /> : null}
       {!loading && statusBucket === 'live' && activeTab === 'summary' ? (
         <ScoringSummary
           awayAbbreviation={boxScoreContext?.innings?.rows?.[0]?.team}
@@ -1215,7 +1361,7 @@ export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError,
           homeAbbreviation={boxScoreContext?.innings?.rows?.[1]?.team}
         />
       ) : null}
-      {!loading && statusBucket === 'scheduled' ? <ScheduledView scheduledContext={scheduledContext} selectedCard={selectedCard} /> : null}
+      {!loading && statusBucket === 'scheduled' && scheduledContext ? <ScheduledView scheduledContext={scheduledContext} selectedCard={card} /> : null}
     </section>
   )
 }

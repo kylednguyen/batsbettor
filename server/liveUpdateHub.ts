@@ -1,46 +1,74 @@
+import type { Server as SocketIOServer, Socket } from 'socket.io'
 import { getEasternDateString } from './dateUtils.js'
-import { buildFeaturedGameSummary, getGameFeed, getLiveScoreCardsByDate } from './mlbStatsService.js'
+import { buildFeaturedGameSummary, getGameFeed, getLiveScoreCardsByDate, type ScoreCard, type ScoreBox } from './mlbStatsService.js'
 
 const SCOREBOARD_INTERVAL_MS = 15_000
 const FINAL_GAME_INTERVAL_MS = 180_000
 const ACTIVE_GAME_INTERVAL_MS = 15_000
 const GAME_ROOM_PREFIX = 'game:'
 
-function safeStringify(value) {
+interface ScoreboardPayload {
+  date: string
+  oddsProvider: string | null
+  totalGames: number
+  gamesInProgress: number
+  cards: ScoreCard[]
+  scoreBox: ScoreBox | null
+}
+
+interface GameEventPayload {
+  gamePk: number
+  feed: unknown
+}
+
+interface ScoreboardCache {
+  date: string | null
+  hash: string | null
+  payload: ScoreboardPayload | null
+}
+
+interface GameCache {
+  hash: string
+  payload: GameEventPayload
+  statusCode: string | null
+  lastFetchedAt: number
+}
+
+function safeStringify(value: unknown): string {
   return JSON.stringify(value)
 }
 
-function getGameRoom(gamePk) {
+function getGameRoom(gamePk: number): string {
   return `${GAME_ROOM_PREFIX}${gamePk}`
 }
 
-function parseGamePkFromRoom(roomName) {
+function parseGamePkFromRoom(roomName: string): number | null {
   if (!roomName.startsWith(GAME_ROOM_PREFIX)) return null
   const gamePk = Number(roomName.slice(GAME_ROOM_PREFIX.length))
   return Number.isFinite(gamePk) ? gamePk : null
 }
 
-function shouldRefreshGame(statusCode, lastFetchedAt) {
+function shouldRefreshGame(statusCode: string | null, lastFetchedAt: number | undefined): boolean {
   if (!lastFetchedAt) return true
   const interval = statusCode === 'F' ? FINAL_GAME_INTERVAL_MS : ACTIVE_GAME_INTERVAL_MS
   return Date.now() - lastFetchedAt >= interval
 }
 
-export function createLiveUpdateHub({ io }) {
-  const scoreboardCache = {
+export function createLiveUpdateHub({ io }: { io: SocketIOServer }) {
+  const scoreboardCache: ScoreboardCache = {
     date: null,
     hash: null,
     payload: null,
   }
 
-  const gameCaches = new Map()
-  let tickTimer = null
+  const gameCaches = new Map<number, GameCache>()
+  let tickTimer: ReturnType<typeof setInterval> | null = null
   let isTicking = false
 
-  async function fetchScoreboard({ forceEmit = false } = {}) {
+  async function fetchScoreboard({ forceEmit = false } = {}): Promise<ScoreboardPayload> {
     const date = getEasternDateString()
     const payload = await getLiveScoreCardsByDate({ date })
-    const eventPayload = {
+    const eventPayload: ScoreboardPayload = {
       ...payload,
       scoreBox: buildFeaturedGameSummary(payload.cards),
     }
@@ -58,10 +86,10 @@ export function createLiveUpdateHub({ io }) {
     return eventPayload
   }
 
-  function getSubscribedGamePks() {
+  function getSubscribedGamePks(): number[] {
     const rooms = io.sockets.adapter.rooms
     const connectedSockets = io.sockets.sockets
-    const gamePks = []
+    const gamePks: number[] = []
 
     rooms.forEach((_value, roomName) => {
       if (connectedSockets.has(roomName)) return
@@ -72,7 +100,7 @@ export function createLiveUpdateHub({ io }) {
     return gamePks
   }
 
-  async function fetchGameUpdate(gamePk, { forceEmit = false, emitToSocket = null } = {}) {
+  async function fetchGameUpdate(gamePk: number, { forceEmit = false, emitToSocket = null }: { forceEmit?: boolean; emitToSocket?: Socket | null } = {}): Promise<GameEventPayload | null> {
     const scoreboardCard =
       scoreboardCache.payload?.cards?.find((card) => card.gamePk === gamePk) ?? null
     const statusCode = scoreboardCard?.statusCode ?? null
@@ -87,7 +115,7 @@ export function createLiveUpdateHub({ io }) {
 
     try {
       const feed = await getGameFeed({ gamePk })
-      const eventPayload = { gamePk, feed }
+      const eventPayload: GameEventPayload = { gamePk, feed }
       const nextHash = safeStringify(eventPayload)
       const changed = nextHash !== cache?.hash
 
@@ -113,7 +141,7 @@ export function createLiveUpdateHub({ io }) {
           lastFetchedAt: Date.now(),
         })
       }
-      console.error(`Live game update failed for ${gamePk}:`, error.message)
+      console.error(`Live game update failed for ${gamePk}:`, (error as Error).message)
       return null
     }
   }
@@ -127,7 +155,7 @@ export function createLiveUpdateHub({ io }) {
       const subscribedGamePks = getSubscribedGamePks()
       await Promise.all(subscribedGamePks.map((gamePk) => fetchGameUpdate(gamePk)))
     } catch (error) {
-      console.error('Live update tick failed:', error.message)
+      console.error('Live update tick failed:', (error as Error).message)
     } finally {
       isTicking = false
     }
@@ -136,9 +164,7 @@ export function createLiveUpdateHub({ io }) {
   function start() {
     if (tickTimer) return
     tick()
-    tickTimer = setInterval(() => {
-      tick()
-    }, SCOREBOARD_INTERVAL_MS)
+    tickTimer = setInterval(() => { tick() }, SCOREBOARD_INTERVAL_MS)
   }
 
   function stop() {
@@ -147,7 +173,7 @@ export function createLiveUpdateHub({ io }) {
     tickTimer = null
   }
 
-  io.on('connection', (socket) => {
+  io.on('connection', (socket: Socket) => {
     socket.emit('live:ready', {
       intervalMs: SCOREBOARD_INTERVAL_MS,
       connectedAt: new Date().toISOString(),
@@ -172,8 +198,5 @@ export function createLiveUpdateHub({ io }) {
     })
   })
 
-  return {
-    start,
-    stop,
-  }
+  return { start, stop }
 }

@@ -1,4 +1,4 @@
-export function getEasternDateString(date = new Date()) {
+export function getEasternDateString(date = new Date()): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     year: 'numeric',

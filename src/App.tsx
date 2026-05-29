@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { io } from 'socket.io-client'
+import { io, Socket } from 'socket.io-client'
 import { ChatInput } from './components/ChatInput'
 import { ChatWindow } from './components/ChatWindow'
 import { SelectedGamePanel } from './components/SelectedGamePanel'
 import { getGameFeed, getScoreCardsByDate, getTodayScoreCardSummary } from './api/client'
 import { chatMessages, sidebarChats } from './data/mockData'
+import type { ScoreCard, ScoreBox } from './types'
+import type { SelectedCardLike } from './components/SelectedGamePanel'
 
-function getEasternDateString(date = new Date()) {
+function getEasternDateString(date = new Date()): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -18,7 +20,7 @@ function getEasternDateString(date = new Date()) {
   return `${lookup.year}-${lookup.month}-${lookup.day}`
 }
 
-function buildFeaturedScoreBox(cards) {
+function buildFeaturedScoreBox(cards: ScoreCard[]): ScoreBox | null {
   const featured =
     cards.find((card) => card.statusCode === 'L') ??
     cards.find((card) => card.statusCode === 'P') ??
@@ -38,19 +40,18 @@ function buildFeaturedScoreBox(cards) {
   }
 }
 
-function formatGameRow(card) {
+function formatGameRow(card: ScoreCard): string {
   return `${card.awayAbbreviation} @ ${card.homeAbbreviation} ${card.awayScore ?? '-'} - ${card.homeScore ?? '-'}`
 }
 
-function formatSidebarGameMeta(card) {
+function formatSidebarGameMeta(card: ScoreCard): string {
   if (card.statusCode === 'P') {
     return card.homeMoneylineDisplay ? `${card.homeAbbreviation} ${card.homeMoneylineDisplay}` : '--'
   }
-
   return `${card.awayScore ?? '-'} - ${card.homeScore ?? '-'}`
 }
 
-function shiftEasternDate(baseDateString, deltaDays) {
+function shiftEasternDate(baseDateString: string, deltaDays: number): string {
   const [year, month, day] = baseDateString.split('-').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day))
   date.setUTCDate(date.getUTCDate() + deltaDays)
@@ -60,13 +61,19 @@ function shiftEasternDate(baseDateString, deltaDays) {
   return `${nextYear}-${nextMonth}-${nextDay}`
 }
 
-function formatSidebarDateLabel(dateString, todayString) {
+function formatSidebarDateLabel(dateString: string, todayString: string): string {
   if (dateString === todayString) return 'Today'
   const date = new Date(`${dateString}T12:00:00`)
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-const navItems = [
+interface NavItem {
+  id: string
+  label: string
+  icon: string
+}
+
+const navItems: NavItem[] = [
   { id: 'new', label: 'New chat', icon: '+' },
   { id: 'search', label: 'Search chats', icon: '?' },
   { id: 'saved', label: 'Projects', icon: '#' },
@@ -76,33 +83,33 @@ const navItems = [
 
 export default function App() {
   const [prompt, setPrompt] = useState('')
-  const [scoreBox, setScoreBox] = useState(null)
-  const [scoreCards, setScoreCards] = useState([])
-  const [selectedGamePk, setSelectedGamePk] = useState(null)
-  const [selectedGameCard, setSelectedGameCard] = useState(null)
-  const [selectedGameFeed, setSelectedGameFeed] = useState(null)
+  const [scoreBox, setScoreBox] = useState<ScoreBox | null>(null)
+  const [scoreCards, setScoreCards] = useState<ScoreCard[]>([])
+  const [selectedGamePk, setSelectedGamePk] = useState<number | null>(null)
+  const [selectedGameCard, setSelectedGameCard] = useState<ScoreCard | null>(null)
+  const [selectedGameFeed, setSelectedGameFeed] = useState<Record<string, unknown> | null>(null)
   const [selectedGameLoading, setSelectedGameLoading] = useState(false)
   const [scoreError, setScoreError] = useState('')
   const [activeChatId, setActiveChatId] = useState(sidebarChats[0]?.id ?? 'new-chat')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isSidebarGamesExpanded, setIsSidebarGamesExpanded] = useState(false)
   const [sidebarDateOffset, setSidebarDateOffset] = useState(0)
-  const [sidebarDateCards, setSidebarDateCards] = useState([])
+  const [sidebarDateCards, setSidebarDateCards] = useState<ScoreCard[]>([])
   const [sidebarDateLoading, setSidebarDateLoading] = useState(false)
   const today = getEasternDateString()
-  const socketRef = useRef(null)
-  const selectedGamePkRef = useRef(null)
-  const previousSubscribedGameRef = useRef(null)
-  const sidebarDateScrollRef = useRef(null)
+  const socketRef = useRef<Socket | null>(null)
+  const selectedGamePkRef = useRef<number | null>(null)
+  const previousSubscribedGameRef = useRef<number | null>(null)
+  const sidebarDateScrollRef = useRef<HTMLDivElement | null>(null)
 
   const sortedScoreCards = useMemo(
     () =>
       [...scoreCards].sort((left, right) => {
-        const priority = { L: 0, P: 1, F: 2 }
-        const leftPriority = priority[left.statusCode] ?? 3
-        const rightPriority = priority[right.statusCode] ?? 3
+        const priority: Record<string, number> = { L: 0, P: 1, F: 2 }
+        const leftPriority = priority[left.statusCode ?? ''] ?? 3
+        const rightPriority = priority[right.statusCode ?? ''] ?? 3
         if (leftPriority !== rightPriority) return leftPriority - rightPriority
-        return new Date(left.gameDate).getTime() - new Date(right.gameDate).getTime()
+        return new Date(left.gameDate ?? '').getTime() - new Date(right.gameDate ?? '').getTime()
       }),
     [scoreCards]
   )
@@ -144,14 +151,12 @@ export default function App() {
           })
         }
       } catch (error) {
-        if (!cancelled) setScoreError(error.message)
+        if (!cancelled) setScoreError((error as Error).message)
       }
     }
 
     loadLiveSlate()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [today])
 
   useEffect(() => {
@@ -170,20 +175,14 @@ export default function App() {
           setSidebarDateCards(payload.cards ?? [])
         }
       } catch (_error) {
-        if (!cancelled) {
-          setSidebarDateCards([])
-        }
+        if (!cancelled) setSidebarDateCards([])
       } finally {
-        if (!cancelled) {
-          setSidebarDateLoading(false)
-        }
+        if (!cancelled) setSidebarDateLoading(false)
       }
     }
 
     loadSidebarDateCards()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [isSidebarGamesExpanded, sidebarActiveDate, sidebarDateOffset, sortedScoreCards])
 
   useEffect(() => {
@@ -192,7 +191,7 @@ export default function App() {
     const frame = requestAnimationFrame(() => {
       const activeButton = sidebarDateScrollRef.current?.querySelector?.(
         `[data-date-offset="${sidebarDateOffset}"]`
-      )
+      ) as HTMLElement | null
 
       if (activeButton?.scrollIntoView) {
         activeButton.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
@@ -218,7 +217,7 @@ export default function App() {
       }
     })
 
-    socket.on('scoreboard:update', (payload) => {
+    socket.on('scoreboard:update', (payload: { cards?: ScoreCard[]; scoreBox?: ScoreBox | null }) => {
       setScoreError('')
       setScoreCards(payload.cards ?? [])
       setScoreBox(payload.scoreBox ?? buildFeaturedScoreBox(payload.cards ?? []))
@@ -228,13 +227,13 @@ export default function App() {
       })
     })
 
-    socket.on('game:update', ({ gamePk, feed }) => {
+    socket.on('game:update', ({ gamePk, feed }: { gamePk: number; feed: Record<string, unknown> }) => {
       if (!gamePk || gamePk !== selectedGamePkRef.current) return
       setSelectedGameFeed(feed)
       setSelectedGameLoading(false)
     })
 
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', (error: Error) => {
       setScoreError(error.message)
     })
 
@@ -260,24 +259,18 @@ export default function App() {
         setSelectedGameFeed(null)
         const payload = await getGameFeed(selectedGamePk)
         if (!cancelled) {
-          setSelectedGameFeed(payload)
+          setSelectedGameFeed(payload as Record<string, unknown>)
           setSelectedGameCard((current) => current ?? selectedCard ?? null)
         }
       } catch (_error) {
-        if (!cancelled) {
-          setSelectedGameFeed(null)
-        }
+        if (!cancelled) setSelectedGameFeed(null)
       } finally {
-        if (!cancelled) {
-          setSelectedGameLoading(false)
-        }
+        if (!cancelled) setSelectedGameLoading(false)
       }
     }
 
     loadSelectedGameFeed()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [selectedGamePk])
 
   useEffect(() => {
@@ -303,7 +296,7 @@ export default function App() {
     }
   }, [selectedGamePk])
 
-  function handleSelectGame(card) {
+  function handleSelectGame(card: ScoreCard) {
     setSelectedGamePk(card.gamePk)
     setSelectedGameCard(card)
   }
@@ -315,7 +308,7 @@ export default function App() {
     setSelectedGameCard(null)
   }
 
-  function handleSelectSidebarDate(nextOffset) {
+  function handleSelectSidebarDate(nextOffset: number) {
     setSidebarDateOffset(nextOffset)
   }
 
@@ -529,7 +522,7 @@ export default function App() {
               gameFeed={selectedGameFeed}
               loading={selectedGameLoading}
               scoreError={scoreError}
-              selectedCard={selectedCard ?? scoreBox}
+              selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
               today={today}
             />
 

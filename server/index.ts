@@ -1,5 +1,5 @@
 import cors from 'cors'
-import express from 'express'
+import express, { Request, Response } from 'express'
 import { createServer } from 'http'
 import { Server as SocketIOServer } from 'socket.io'
 import { getEasternDateString } from './dateUtils.js'
@@ -25,10 +25,11 @@ const io = new SocketIOServer(httpServer, {
 
 const liveUpdateHub = createLiveUpdateHub({ io })
 
-function formatError(error) {
+function formatError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
   const causeMessage =
-    error && typeof error === 'object' && error.cause && error.cause.message
-      ? ` (${error.cause.message})`
+    error.cause && typeof error.cause === 'object' && 'message' in error.cause
+      ? ` (${(error.cause as { message: string }).message})`
       : ''
   return `${error.message}${causeMessage}`
 }
@@ -36,19 +37,19 @@ function formatError(error) {
 app.use(cors())
 app.use(express.json())
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ ok: true, service: 'mlbpredict-backend' })
 })
 
-app.get('/api/mlb/schedule', async (req, res) => {
+app.get('/api/mlb/schedule', async (req: Request, res: Response) => {
   try {
-    const date = req.query.date || getEasternDateString()
+    const date = (req.query.date as string) || getEasternDateString()
     const payload = await getScheduleByDate({ date })
     const games = flattenGamesFromSchedule(payload)
     res.json({
       date,
       totalGames: games.length,
-      gamesInProgress: payload?.totalGamesInProgress ?? 0,
+      gamesInProgress: (payload as { totalGamesInProgress?: number })?.totalGamesInProgress ?? 0,
       games,
     })
   } catch (error) {
@@ -56,7 +57,7 @@ app.get('/api/mlb/schedule', async (req, res) => {
   }
 })
 
-app.get('/api/mlb/game/:gamePk/live', async (req, res) => {
+app.get('/api/mlb/game/:gamePk/live', async (req: Request, res: Response) => {
   try {
     const gamePk = Number(req.params.gamePk)
     if (!Number.isFinite(gamePk)) {
@@ -69,32 +70,25 @@ app.get('/api/mlb/game/:gamePk/live', async (req, res) => {
   }
 })
 
-app.get('/api/mlb/today-score', async (_req, res) => {
+app.get('/api/mlb/today-score', async (_req: Request, res: Response) => {
   try {
     const date = getEasternDateString()
     const payload = await getLiveScoreCardsByDate({ date })
     const selected = buildFeaturedGameSummary(payload.cards)
 
     if (!selected) {
-      return res.json({
-        date,
-        message: 'No games available for today',
-        scoreBox: null,
-      })
+      return res.json({ date, message: 'No games available for today', scoreBox: null })
     }
 
-    return res.json({
-      date,
-      scoreBox: selected,
-    })
+    return res.json({ date, scoreBox: selected })
   } catch (error) {
     return res.status(502).json({ error: formatError(error) })
   }
 })
 
-app.get('/api/mlb/scorecards', async (req, res) => {
+app.get('/api/mlb/scorecards', async (req: Request, res: Response) => {
   try {
-    const date = req.query.date || getEasternDateString()
+    const date = (req.query.date as string) || getEasternDateString()
     const payload = await getLiveScoreCardsByDate({ date })
     return res.json(payload)
   } catch (error) {
@@ -102,9 +96,9 @@ app.get('/api/mlb/scorecards', async (req, res) => {
   }
 })
 
-app.get('/api/mlb/odds', async (req, res) => {
+app.get('/api/mlb/odds', async (req: Request, res: Response) => {
   try {
-    const date = req.query.date || getEasternDateString()
+    const date = (req.query.date as string) || getEasternDateString()
     const payload = await getMlbOddsByDate({ date })
     return res.json(payload)
   } catch (error) {

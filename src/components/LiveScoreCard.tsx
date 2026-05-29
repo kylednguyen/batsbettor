@@ -1,6 +1,15 @@
+import type { ScoreCard } from '../types'
 import { MiniBaseballDiamond } from './BaseballDiamond'
 
-export function LiveScoreCard({ card, compact = false, active = false, onSelect, minimal = false }) {
+interface LiveScoreCardProps {
+  card: ScoreCard
+  compact?: boolean
+  active?: boolean
+  onSelect?: () => void
+  minimal?: boolean
+}
+
+export function LiveScoreCard({ card, compact = false, active = false, onSelect, minimal = false }: LiveScoreCardProps) {
   const isLive = card.statusCode === 'L'
   const isFinal = card.statusCode === 'F'
   const hasVisibleBaseState = isLive && card.baseState && card.baseState !== 'Bases empty'

@@ -1,4 +1,22 @@
-export const ingestionLayer = {
+interface IngestionArtifact {
+  gamePk: number
+  matchup: string
+  status: string
+  score: string
+}
+
+interface IngestionLayer {
+  source: string
+  runDate: string
+  fetchedAt: string
+  totalGames: number
+  gamesInProgress: number
+  sampledGamePk: number
+  artifacts: string[]
+  sampleGames: IngestionArtifact[]
+}
+
+export const ingestionLayer: IngestionLayer = {
   source: 'MLB Stats API',
   runDate: '2026-05-27',
   fetchedAt: '2026-05-27T20:03:03Z',

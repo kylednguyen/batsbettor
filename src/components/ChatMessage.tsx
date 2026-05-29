@@ -1,4 +1,10 @@
-export function ChatMessage({ message }) {
+import type { ChatMessage as ChatMessageType } from '../types'
+
+interface ChatMessageProps {
+  message: ChatMessageType
+}
+
+export function ChatMessage({ message }: ChatMessageProps) {
   return (
     <article className={`message-card ${message.role}`}>
       <div className="message-meta">

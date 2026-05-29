@@ -1,11 +1,13 @@
-export const starterPrompts = [
+import type { ChatMessage, SidebarChat, LiveGame } from '../types'
+
+export const starterPrompts: string[] = [
   "What's the live win probability for the Yankees game?",
   'Which games have the biggest model vs book gap right now?',
   'Translate the fair odds for Dodgers vs Padres.',
   'Why did the Braves win probability move?',
 ]
 
-export const intentList = [
+export const intentList: string[] = [
   'list_live_games',
   'get_win_probability',
   'get_projected_score',
@@ -14,7 +16,7 @@ export const intentList = [
   'explain_prediction',
 ]
 
-export const retrievalTools = [
+export const retrievalTools: string[] = [
   'get_live_games()',
   'get_live_game(game_pk)',
   'get_latest_odds(game_pk)',
@@ -23,7 +25,7 @@ export const retrievalTools = [
   'get_top_model_edges()',
 ]
 
-export const frontendModules = [
+export const frontendModules: string[] = [
   'ChatWindow',
   'ChatMessage',
   'ChatInput',
@@ -33,7 +35,7 @@ export const frontendModules = [
   'EdgeCard',
 ]
 
-export const liveGames = [
+export const liveGames: LiveGame[] = [
   {
     matchup: 'NYY vs BOS',
     status: 'Bot 6th',
@@ -51,7 +53,7 @@ export const liveGames = [
   },
 ]
 
-export const chatMessages = [
+export const chatMessages: ChatMessage[] = [
   {
     role: 'assistant',
     tag: 'System',
@@ -74,7 +76,7 @@ export const chatMessages = [
   },
 ]
 
-export const sidebarChats = [
+export const sidebarChats: SidebarChat[] = [
   {
     id: 'chat-live-dodgers',
     title: 'Dodgers live edge',

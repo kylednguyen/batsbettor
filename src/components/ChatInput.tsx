@@ -1,6 +1,12 @@
 import { useState } from 'react'
 
-export function ChatInput({ prompt, setPrompt, minimal = false }) {
+interface ChatInputProps {
+  prompt: string
+  setPrompt: (value: string) => void
+  minimal?: boolean
+}
+
+export function ChatInput({ prompt, setPrompt, minimal = false }: ChatInputProps) {
   const [isFocused, setIsFocused] = useState(false)
   const labelText = minimal ? 'Ask anything' : 'Ask about a live game, fair odds, final score projection, or biggest model edge...'
   const showFloatingLabel = isFocused
@@ -22,7 +28,7 @@ export function ChatInput({ prompt, setPrompt, minimal = false }) {
           onBlur={() => setIsFocused(false)}
           onFocus={() => setIsFocused(true)}
           placeholder={showFloatingLabel ? '' : labelText}
-          rows="1"
+          rows={1}
           value={prompt}
         />
         <button aria-label="Send prompt" className="send-button" type="submit">

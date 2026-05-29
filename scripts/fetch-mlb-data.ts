@@ -7,20 +7,21 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '..')
 
-function parseArgs(argv) {
-  const args = {}
+function parseArgs(argv: string[]): Record<string, string | true> {
+  const args: Record<string, string | true> = {}
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i]
     if (!token.startsWith('--')) continue
     const key = token.slice(2)
-    const value = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : true
+    const next = argv[i + 1]
+    const value: string | true = next && !next.startsWith('--') ? next : true
     args[key] = value
     if (value !== true) i += 1
   }
   return args
 }
 
-async function writeJson(relativePath, payload) {
+async function writeJson(relativePath: string, payload: unknown): Promise<string> {
   const destination = path.join(projectRoot, relativePath)
   await fs.mkdir(path.dirname(destination), { recursive: true })
   await fs.writeFile(destination, JSON.stringify(payload, null, 2), 'utf-8')
@@ -29,8 +30,8 @@ async function writeJson(relativePath, payload) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
-  const date = args.date || new Date().toISOString().slice(0, 10)
-  const outputDir = args.outputDir || 'data/raw/mlbstats'
+  const date = (args.date as string) || new Date().toISOString().slice(0, 10)
+  const outputDir = (args.outputDir as string) || 'data/raw/mlbstats'
   const client = new MlbStatsClient()
 
   const schedule = await client.getScheduleByDate({ date })
@@ -50,7 +51,7 @@ async function main() {
   console.log(`Saved: ${feedPath}`)
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   console.error(error)
   process.exitCode = 1
 })
