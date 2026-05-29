@@ -1,4 +1,4 @@
-# BattersBetter
+# BatsBettor
 
 An MLB forecasting chatbot that combines live game feeds, sportsbook odds, and machine learning to answer natural-language questions about win probability, projected scores, fair odds, and model-vs-market differences.
 
@@ -11,8 +11,8 @@ An MLB forecasting chatbot that combines live game feeds, sportsbook odds, and m
 
 ## Stack
 
-- **Frontend:** React + Vite
-- **Backend:** Node.js + Express + Socket.IO
+- **Frontend:** React + Vite + TypeScript
+- **Backend:** Node.js + Express + Socket.IO + TypeScript
 - **Data:** MLB StatsAPI (live feeds, schedules), The Odds API (moneyline, run line, totals)
 - **ML (in progress):** Scikit-learn win probability and score projection models trained on historical Statcast data
 
@@ -21,7 +21,7 @@ An MLB forecasting chatbot that combines live game feeds, sportsbook odds, and m
 ```bash
 npm install
 npm run dev        # frontend on :5173
-npm run server     # backend on :8787
+npm run dev:server # backend on :8787
 ```
 
 ## Status
