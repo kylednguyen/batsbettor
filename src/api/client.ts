@@ -1,4 +1,4 @@
-import type { ScoreCard, ScoreBox, MlbFeedPayload, ChatMessage } from '../types'
+import type { ScoreCard, ScoreBox, MlbFeedPayload, ChatMessage, Prediction } from '../types'
 
 interface ApiErrorPayload {
   error: string
@@ -74,6 +74,15 @@ export async function getScoreCardsByDate(date?: string): Promise<ScoreCardsByDa
     throw new Error((payload as ApiErrorPayload).error || 'Failed to load score cards')
   }
   return payload as unknown as ScoreCardsByDatePayload
+}
+
+export async function getPrediction(gamePk: number): Promise<Prediction> {
+  const response = await fetch(`/api/predict/${gamePk}`)
+  const payload = await readApiPayload(response)
+  if (!response.ok) {
+    throw new Error((payload as ApiErrorPayload).error || 'Failed to load prediction')
+  }
+  return payload as unknown as Prediction
 }
 
 export async function getGameFeed(gamePk: number): Promise<MlbFeedPayload> {

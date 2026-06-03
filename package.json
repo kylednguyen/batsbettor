@@ -8,11 +8,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "ingest:mlb": "tsx scripts/fetch-mlb-data.ts"
+    "ingest:mlb": "tsx scripts/fetch-mlb-data.ts",
+    "train:winprob": "tsx scripts/train_win_prob.ts",
+    "train:xgb": "python3 ml/train_xgb.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "iconoir-react": "^7.11.0",
     "react": "^18.3.1",

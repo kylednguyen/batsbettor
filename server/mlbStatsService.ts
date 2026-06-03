@@ -45,7 +45,7 @@ export interface ScoreBox {
   outs: number | null
 }
 
-interface OddsEntry {
+export interface OddsEntry {
   provider: string | null
   homeMoneyline: number | null
   awayMoneyline: number | null
@@ -93,7 +93,7 @@ async function fetchJson(url: URL): Promise<unknown> {
   return response.json()
 }
 
-function normalizeTeamName(name: unknown): string {
+export function normalizeTeamName(name: unknown): string {
   return String(name || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
@@ -112,7 +112,7 @@ function getDateKeyFromIso(isoString: string | null | undefined): string | null 
   return formatter.format(date)
 }
 
-function buildOddsLookupKey({ awayTeam, homeTeam, gameDate }: {
+export function buildOddsLookupKey({ awayTeam, homeTeam, gameDate }: {
   awayTeam: unknown
   homeTeam: unknown
   gameDate: string | null | undefined
@@ -136,9 +136,18 @@ function pickPreferredBookmaker(bookmakers: any[] = []): any {
   return bookmakers[0]
 }
 
+// Cache the odds response briefly so live prediction refreshes (which can fire
+// on every game feed tick) don't burn through The Odds API quota.
+const ODDS_CACHE_TTL_MS = 30_000
+let oddsCache: { fetchedAt: number; payload: OddsPayload } | null = null
+
 export async function getCurrentMlbOdds(): Promise<OddsPayload> {
   if (!ODDS_API_KEY) {
     return { provider: null, oddsByLookupKey: new Map() }
+  }
+
+  if (oddsCache && Date.now() - oddsCache.fetchedAt < ODDS_CACHE_TTL_MS) {
+    return oddsCache.payload
   }
 
   const url = buildOddsUrl(`/v4/sports/${ODDS_API_SPORT_KEY}/odds`, {
@@ -177,7 +186,28 @@ export async function getCurrentMlbOdds(): Promise<OddsPayload> {
     })
   }
 
-  return { provider: 'The Odds API', oddsByLookupKey }
+  const result: OddsPayload = { provider: 'The Odds API', oddsByLookupKey }
+  oddsCache = { fetchedAt: Date.now(), payload: result }
+  return result
+}
+
+// Look up the moneyline market for a single matchup by team names + date.
+export async function getOddsForMatchup({
+  awayTeam,
+  homeTeam,
+  gameDate,
+}: {
+  awayTeam: unknown
+  homeTeam: unknown
+  gameDate: string | null | undefined
+}): Promise<OddsEntry | null> {
+  try {
+    const oddsPayload = await getCurrentMlbOdds()
+    const key = buildOddsLookupKey({ awayTeam, homeTeam, gameDate })
+    return oddsPayload.oddsByLookupKey.get(key) ?? null
+  } catch (_error) {
+    return null
+  }
 }
 
 export async function getMlbOddsByDate({ date }: { date: string }) {
@@ -207,9 +237,49 @@ export async function getScheduleByDate({ date, sportId = 1, gameType = 'R' }: {
   return fetchJson(url)
 }
 
+// Generic schedule fetch supporting date ranges and team filters.
+export async function getSchedule(params: QueryParams = {}): Promise<unknown> {
+  const url = buildUrl('/api/v1/schedule', { sportId: 1, ...params })
+  return fetchJson(url)
+}
+
+export async function getScheduleRange({
+  startDate,
+  endDate,
+  sportId = 1,
+  gameType = 'R',
+  teamId,
+}: {
+  startDate: string
+  endDate: string
+  sportId?: number
+  gameType?: string
+  teamId?: number
+}): Promise<unknown> {
+  return getSchedule({ startDate, endDate, sportId, gameType, teamId })
+}
+
 export async function getGameFeed({ gamePk }: { gamePk: number }): Promise<unknown> {
   const url = buildUrl(`/api/v1.1/game/${gamePk}/feed/live`)
   return fetchJson(url)
+}
+
+export async function getBoxscore({ gamePk }: { gamePk: number }): Promise<unknown> {
+  return fetchJson(buildUrl(`/api/v1/game/${gamePk}/boxscore`))
+}
+
+export async function getPersonSeasonPitching({
+  personId,
+  season,
+}: {
+  personId: number
+  season: number
+}): Promise<unknown> {
+  return fetchJson(
+    buildUrl(`/api/v1/people/${personId}`, {
+      hydrate: `stats(group=[pitching],type=[season],season=${season})`,
+    })
+  )
 }
 
 export function flattenGamesFromSchedule(schedulePayload: unknown): Array<{

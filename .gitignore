@@ -3,6 +3,7 @@ dist/
 .env
 .env.local
 data/raw/
+data/processed/
 *.pkl
 __pycache__/
 *.pyc

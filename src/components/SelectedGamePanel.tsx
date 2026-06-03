@@ -1006,35 +1006,6 @@ function PitchHistoryRow({ history, onSelectPitch, selectedPitchId }: PitchHisto
   )
 }
 
-interface ScoreboardHeaderProps {
-  awayTeam: MlbTeam | null
-  homeTeam: MlbTeam | null
-  liveContext: LiveContext
-  selectedCard: ScoreCard | null | undefined
-}
-
-function ScoreboardHeader({ awayTeam, homeTeam, liveContext, selectedCard }: ScoreboardHeaderProps) {
-  const inningSummary = [liveContext.inningState, liveContext.outsSummary].filter(Boolean).join(', ')
-  return (
-    <div className="detail-card live-scoreboard-header">
-      <div className="live-scoreboard-header__team">
-        <AssetImage alt={`${awayTeam?.name || selectedCard?.awayAbbreviation} logo`} className="live-scoreboard-header__logo" src={buildTeamLogoUrl(awayTeam?.id)} />
-        <span>{selectedCard?.awayAbbreviation}</span>
-      </div>
-      <strong className="live-scoreboard-header__score">{selectedCard?.awayScore ?? 0}</strong>
-      <div className="live-scoreboard-header__center">
-        {inningSummary ? <p>{inningSummary}</p> : null}
-        <MiniBaseballDiamond baseState={liveContext.rawBaseState} />
-      </div>
-      <strong className="live-scoreboard-header__score">{selectedCard?.homeScore ?? 0}</strong>
-      <div className="live-scoreboard-header__team">
-        <AssetImage alt={`${homeTeam?.name || selectedCard?.homeAbbreviation} logo`} className="live-scoreboard-header__logo" src={buildTeamLogoUrl(homeTeam?.id)} />
-        <span>{selectedCard?.homeAbbreviation}</span>
-      </div>
-    </div>
-  )
-}
-
 interface SelectedGameScorebugProps {
   awayTeam: MlbTeam | null
   homeTeam: MlbTeam | null
@@ -1046,14 +1017,18 @@ interface SelectedGameScorebugProps {
 function SelectedGameScorebug({ awayTeam, homeTeam, selectedCard, statusBucket, statusText }: SelectedGameScorebugProps) {
   const awayRecord = formatRecord(awayTeam?.record)
   const homeRecord = formatRecord(homeTeam?.record)
+  // For a quick glance on the big block, outs are more relevant than the
+  // balls-strikes count (which lives in the detailed live view below).
+  const outsLabel =
+    selectedCard?.outs != null ? `${selectedCard.outs} ${selectedCard.outs === 1 ? 'out' : 'outs'}` : null
   const centerLabel =
     statusBucket === 'final'
       ? 'Final'
       : statusBucket === 'scheduled'
         ? formatTime(selectedCard?.gameDate) || statusText
-        : selectedCard?.count && selectedCard?.inningState
-          ? `${selectedCard.inningState} • ${selectedCard.count}`
-          : selectedCard?.inningState || statusText
+        : selectedCard?.inningState
+          ? `${selectedCard.inningState}${outsLabel ? ` • ${outsLabel}` : ''}`
+          : statusText
 
   return (
     <div className="selected-game-scorebug">
@@ -1165,7 +1140,6 @@ function LiveView({ awayTeam, homeTeam, liveContext, boxScoreContext, selectedCa
   return (
     <section className="detail-section">
       <div className="live-scorecast-card">
-        <ScoreboardHeader awayTeam={awayTeam} homeTeam={homeTeam} liveContext={liveContext} selectedCard={selectedCard} />
         <MatchupCard awayTeam={awayTeam} homeTeam={homeTeam} liveContext={liveContext} />
 
         <div className="live-scorecast-field">

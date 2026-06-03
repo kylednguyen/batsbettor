@@ -1,0 +1,55 @@
+{
+  "featureNames": [
+    "homeWinPct",
+    "homeRunDiffAvg",
+    "homeWinPct10",
+    "homeRunDiffAvg10",
+    "awayWinPct",
+    "awayRunDiffAvg",
+    "awayWinPct10",
+    "awayRunDiffAvg10"
+  ],
+  "intercept": 0.108006,
+  "coef": [
+    -0.004016,
+    0.164309,
+    0.002307,
+    -0.044555,
+    0.044232,
+    -0.225865,
+    -0.09,
+    0.052608
+  ],
+  "mean": [
+    0.499512,
+    0.003759,
+    0.493665,
+    -0.015024,
+    0.500456,
+    -0.002113,
+    0.506551,
+    0.018327
+  ],
+  "std": [
+    0.116377,
+    1.148049,
+    0.170283,
+    1.575949,
+    0.116911,
+    1.145177,
+    0.168693,
+    1.581001
+  ],
+  "trainedAt": "2026-06-03T02:21:38.302Z",
+  "trainingGames": 3694,
+  "dateRange": "2023-04-01..2024-10-01",
+  "metrics": {
+    "logLoss": 0.6869,
+    "brier": 0.2469,
+    "accuracy": 0.5509,
+    "rocAuc": 0.5639,
+    "baselineLogLoss": 0.694,
+    "baselineAccuracy": 0.5054,
+    "homeWinRate": 0.5265
+  }
+}

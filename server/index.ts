@@ -1,3 +1,4 @@
+import 'dotenv/config' // load .env before any module reads process.env
 import cors from 'cors'
 import express, { Request, Response } from 'express'
 import { createServer } from 'http'
@@ -5,6 +6,8 @@ import { Server as SocketIOServer } from 'socket.io'
 import { getEasternDateString } from './dateUtils.js'
 import { createLiveUpdateHub } from './liveUpdateHub.js'
 import { handleChat } from './chat.js'
+import { isLlmConfigured } from './llm/mlbChatService.js'
+import { getPredictionForGame } from './predictionService.js'
 import {
   buildFeaturedGameSummary,
   flattenGamesFromSchedule,
@@ -107,14 +110,30 @@ app.get('/api/mlb/odds', async (req: Request, res: Response) => {
   }
 })
 
+app.get('/api/predict/:gamePk', async (req: Request, res: Response) => {
+  try {
+    const gamePk = Number(req.params.gamePk)
+    if (!Number.isFinite(gamePk)) {
+      return res.status(400).json({ error: 'Invalid gamePk' })
+    }
+    const prediction = await getPredictionForGame(gamePk)
+    return res.json(prediction)
+  } catch (error) {
+    return res.status(502).json({ error: formatError(error) })
+  }
+})
+
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
     const { message, gameContext } = req.body as { message?: string; gameContext?: unknown }
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'message is required' })
     }
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured on server' })
+    if (!isLlmConfigured()) {
+      return res.status(503).json({
+        error:
+          'LLM not configured. Set LLM_PROVIDER to groq (GROQ_API_KEY), gemini (GEMINI_API_KEY), anthropic (ANTHROPIC_API_KEY), or ollama (local).',
+      })
     }
     const result = await handleChat({ message: message.trim(), gameContext: gameContext as never })
     return res.json(result)

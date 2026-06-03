@@ -19,9 +19,10 @@
   --red-soft: rgba(196, 30, 58, 0.18);
   --blue-soft: rgba(196, 30, 58, 0.1);
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
-  --radius-sm: 3px;
-  --radius-md: 3px;
-  --radius-lg: 3px;
+  /* Consistent rounded scale: controls / cards / panels */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
 }
 
 * {
@@ -2592,6 +2593,29 @@ button {
     inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
+.model-insights {
+  margin-bottom: 1.25rem;
+}
+
+.model-insights__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.model-insights__status {
+  color: var(--muted, #8a8a8a);
+  font-size: 0.9rem;
+  margin-top: 0.4rem;
+}
+
+.model-insights__why {
+  margin-top: 0.8rem;
+  color: var(--muted, #8a8a8a);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .message-meta {
   display: flex;
   align-items: center;
@@ -4163,4 +4187,386 @@ body,
   .chatgame-main {
     padding: 16px;
   }
+}
+
+/* ===================================================================== */
+/* In-game chat-focused workspace: chat is primary, game cards dock aside */
+/* ===================================================================== */
+
+.game-workspace {
+  display: flex;
+  gap: 16px;
+  height: calc(100vh - 40px);
+  align-items: stretch;
+}
+
+.game-workspace .chat-main { order: 1; }
+.game-workspace--right .game-side { order: 2; }
+.game-workspace--left .game-side { order: 0; }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* --- Game side panel --- */
+.game-side {
+  flex: 0 0 410px;
+  max-width: 410px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #161618;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.game-side__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+.game-side__title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: -0.01em;
+}
+.game-side__actions { display: flex; gap: 4px; }
+.game-side__scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px;
+}
+
+/* --- Chat main pane --- */
+.chat-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.chat-main__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.chat-main__heading { display: flex; align-items: center; gap: 10px; }
+.chat-main__title {
+  margin: 2px 0 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+.chat-main__stream {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 22px;
+}
+.chat-main__stream .chat-stream {
+  max-width: 768px;
+  margin: 0 auto;
+}
+.chat-main__empty {
+  max-width: 620px;
+  margin: 7vh auto 0;
+  text-align: center;
+  color: var(--text-secondary, #9a9a9a);
+}
+.chat-main__empty p {
+  margin: 0 0 14px;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+.chat-main__empty .quick-prompts-row { justify-content: center; }
+.chat-main__composer {
+  padding: 14px 18px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.chat-main__composer .composer {
+  max-width: 768px;
+  margin: 0 auto;
+}
+
+/* --- Message bubbles --- */
+.chat-stream { gap: 1.1rem; }
+.message-card.assistant {
+  background: transparent;
+  box-shadow: none;
+  padding: 0.1rem 0.1rem 0.6rem;
+}
+.message-card.user {
+  align-self: flex-end;
+  max-width: 86%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.62rem 0.9rem;
+}
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.message-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(196, 30, 58, 0.16);
+  font-size: 12px;
+  line-height: 1;
+}
+.message-tag {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #e0566c;
+}
+
+/* --- Formatted assistant answer --- */
+.ans {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 0.97rem;
+  line-height: 1.55;
+}
+.ans p { margin: 0; }
+.ans-lead {
+  font-size: 1.04rem;
+  font-weight: 500;
+  color: #fff;
+  line-height: 1.5;
+}
+.ans-section { display: flex; flex-direction: column; gap: 6px; }
+.ans-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary, #8a8a8a);
+}
+.ans-label--warn { color: #e0a13a; }
+.ans-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ans-list li { line-height: 1.5; }
+.ans-list li::marker { color: rgba(255, 255, 255, 0.35); }
+.ans-row { display: flex; align-items: center; gap: 10px; }
+.ans-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.ans-badge--high { background: rgba(52, 199, 89, 0.16); color: #4ade80; border: 1px solid rgba(52, 199, 89, 0.3); }
+.ans-badge--med { background: rgba(255, 204, 0, 0.14); color: #f5c542; border: 1px solid rgba(255, 204, 0, 0.28); }
+.ans-badge--low { background: rgba(255, 92, 92, 0.14); color: #ff6b6b; border: 1px solid rgba(255, 92, 92, 0.28); }
+.ans-badge--ok { background: rgba(255, 255, 255, 0.06); color: #9aa3ad; border: 1px solid rgba(255, 255, 255, 0.12); }
+.ans-section--warn {
+  background: rgba(224, 161, 58, 0.06);
+  border: 1px solid rgba(224, 161, 58, 0.18);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+@media (max-width: 900px) {
+  .game-workspace {
+    flex-direction: column;
+    height: auto;
+  }
+  .game-side {
+    flex-basis: auto;
+    max-width: none;
+    max-height: 48vh;
+  }
+  .game-workspace--left .game-side,
+  .game-workspace--right .game-side { order: 0; }
+  .game-workspace .chat-main {
+    order: 1;
+    min-height: 62vh;
+  }
+}
+
+/* ---- Side-panel card spacing: even vertical rhythm ---- */
+.game-side__scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.game-side__scroll .model-insights { margin-bottom: 0; }
+.game-side__scroll .selected-game-scorebug { margin-top: 0; }
+.game-side__scroll .model-insights__grid { gap: 12px; }
+.game-side__scroll .insight-card { padding: 0.95rem 1.05rem; }
+.game-side__scroll .metric-row + .metric-row { margin-top: 0.65rem; }
+.game-side__scroll .insight-card .section-label { margin-bottom: 0.7rem; display: block; }
+
+/* ---- Maximize: game pane takes full width when chat is hidden ---- */
+.game-workspace--gameOnly .game-side {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+/* ===================================================================== */
+/* Micro-animations (respect prefers-reduced-motion)                      */
+/* ===================================================================== */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pane-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes badge-pop {
+  from { opacity: 0; transform: scale(0.82); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Entrances */
+  .chat-stream .message-card { animation: msg-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  .game-side,
+  .chat-main { animation: pane-in 0.26s ease both; }
+  .model-insights__grid .insight-card { animation: card-rise 0.3s ease both; }
+  .model-insights__grid .insight-card:nth-child(2) { animation-delay: 0.05s; }
+  .model-insights__grid .insight-card:nth-child(3) { animation-delay: 0.1s; }
+  .ans-badge { animation: badge-pop 0.25s ease both; }
+
+  /* Hover / press affordances */
+  .insight-card { transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
+  .insight-card:hover { transform: translateY(-2px); }
+
+  .sidebar-game-item { transition: background 0.14s ease, transform 0.14s ease, border-color 0.14s ease; }
+  .sidebar-game-item:hover { transform: translateX(3px); }
+
+  .sidebar-nav-item { transition: background 0.14s ease, color 0.14s ease, transform 0.12s ease; }
+  .sidebar-nav-item:hover { transform: translateX(2px); }
+
+  .icon-btn { transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, transform 0.08s ease; }
+  .icon-btn:hover { transform: translateY(-1px); }
+  .icon-btn:active { transform: scale(0.9); }
+
+  .send-button { transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease; }
+  .send-button:hover:not(:disabled) { transform: scale(1.06); }
+  .send-button:active:not(:disabled) { transform: scale(0.92); }
+
+  .quick-prompt-chip { transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, transform 0.12s ease; }
+  .quick-prompt-chip:hover { transform: translateY(-1px); }
+
+  .composer { transition: border-color 0.16s ease, box-shadow 0.18s ease; }
+  .composer--focused { box-shadow: 0 0 0 3px rgba(196, 30, 58, 0.14); }
+
+  .sidebar-see-more,
+  .sidebar-date-item,
+  .game-log-layout__close { transition: background 0.14s ease, color 0.14s ease, transform 0.1s ease; }
+  .sidebar-date-item:active { transform: scale(0.94); }
+}
+
+/* ===================================================================== */
+/* UI polish pass — consistent radii, selected/hover states, spacing      */
+/* (keeps the existing dark theme, palette, and layout)                   */
+/* ===================================================================== */
+
+/* Radius scale applied to the surfaces (panels 16 / cards 12 / controls 10) */
+.game-side,
+.chat-main { border-radius: 16px; }
+.selected-game-scorebug { border-radius: 16px; }
+.composer { border-radius: 16px; }
+.icon-btn { border-radius: 10px; }
+
+/* Consistent borders on the main surfaces */
+.game-side,
+.chat-main,
+.game-side__bar,
+.chat-main__header { border-color: rgba(255, 255, 255, 0.08); }
+
+/* Clearer—but still subtle—selected state with a brand accent bar */
+.sidebar-game-item.active,
+.sidebar-nav-item--active {
+  background: rgba(196, 30, 58, 0.12);
+  color: #fff;
+  box-shadow: inset 3px 0 0 var(--red);
+}
+.sidebar-game-item.active .sidebar-game-item__score { color: #fff; }
+
+/* Unified hover for sidebar rows (slightly softer than before) */
+.sidebar-nav-item:hover,
+.sidebar-game-item:hover,
+.sidebar-chat-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+/* Chat empty-state: balanced vertical rhythm */
+.chat-main__empty { margin-top: 12vh; }
+.chat-main__empty .quick-prompts-row { gap: 8px; margin-top: 16px; }
+
+/* Smoother skeleton: a soft shimmer sweep instead of an opacity blink */
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.06) 25%,
+      rgba(255, 255, 255, 0.13) 37%,
+      rgba(255, 255, 255, 0.06) 63%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+}
+
+/* Hover affordances: subtle border brighten + lift (motion-safe) */
+@media (prefers-reduced-motion: no-preference) {
+  .insight-card:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  }
+  .sidebar-see-more,
+  .composer-input,
+  .send-button { transition: all 0.16s ease; }
 }

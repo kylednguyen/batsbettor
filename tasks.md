@@ -19,6 +19,85 @@ This should be treated as an analytics and machine learning portfolio project, n
 
 ---
 
+# Implementation Status
+
+> This section tracks what is **actually built** vs. the original plan below. It is the source of truth for current state; the rest of this document is the original design brief.
+
+## Architecture as built (diverged from the plan)
+
+The plan proposed Python/FastAPI + Postgres. The app was instead built on a **TypeScript/Node** stack, and the ML runs **in-process in Node** (no separate Python service, no database) — everything is computed live from MLB StatsAPI with in-memory caches.
+
+- **Frontend:** React + Vite + TypeScript (`src/`)
+- **Backend:** Node + Express + Socket.IO + TypeScript (`server/`)
+- **Data:** MLB StatsAPI (live feed, schedules, history, box scores, pitcher stats); DraftKings scraped for odds, The Odds API fallback
+- **No Postgres** — stateless; caching only. (DB can be added later if persistence is needed.)
+
+## Done
+
+**Ingestion & odds**
+- [x] Live schedule + game feed + scorecards (`server/mlbStatsService.ts`)
+- [x] WebSocket live scoreboard/game updates (`server/liveUpdateHub.ts`)
+- [x] DraftKings moneyline scraper, matched by team nickname (`server/draftkingsService.ts`); The Odds API fallback
+- [x] Odds math: American↔implied, vig removal, fair odds, edge (`server/oddsMath.ts`)
+
+**Models**
+- [x] Analytic **live win-probability** + projected score: base/out run expectancy + remaining innings, normal run-diff, market/prior blend that decays through the game — **incl. extra-innings / ghost-runner handling** (`server/winProbability.ts`)
+- [x] Trained **pregame model**: XGBoost (Python) + logistic baseline (TS), on last-10/30 team form; exported as a tree ensemble and run in-process in TS with verified parity (`ml/train_xgb.py`, `server/xgbModel.ts`, `server/pregameModel.ts`, `scripts/train_win_prob.ts`)
+- [x] **Team form** feature, last-10 and last-30 (`server/teamForm.ts`)
+- [x] **Probable starter** pipeline: ERA/FIP/K9/BB9 → expected runs allowed (`server/pitcherService.ts`)
+- [x] **Bullpen fatigue** pipeline: recent reliever pitch load, back-to-back arms, fatigue score (`server/bullpenService.ts`)
+- [x] Starter + bullpen integrated as a bounded, explainable **prior adjustment** (only when no market odds, to avoid double-counting) (`server/predictionService.ts`)
+
+**API**
+- [x] `GET /api/predict/:gamePk` — full grounded prediction (win prob, projected score, fair odds, no-vig, edge, form, starters, bullpen, confidence, drivers, warnings)
+- [x] `GET /api/mlb/*` (schedule, scorecards, game feed, odds), `GET /api/health`, `POST /api/chat`
+
+**Chatbot / LLM**
+- [x] RAG + LLM **explanation agent** — ML computes the number, LLM only explains (`server/llm/`)
+- [x] Curated baseball **knowledge base** + dependency-free, **intent-aware TF-IDF retrieval** (`baseballKnowledge.ts`, `rag.ts`)
+- [x] **Structured baseball-context builder** with an explicit data-availability inventory, fixed analyst answer format (Direct answer / Why / Confidence / Missing data), and **anti-hallucination guardrails** (`mlbChatService.ts`)
+- [x] Swappable provider via `LLM_PROVIDER`: **Groq** (free hosted `llama-3.3-70b`, recommended), **Gemini** (free hosted), **Anthropic** (Claude), or **Ollama** local (`llama3.1:8b`)
+
+**Frontend**
+- [x] Chat UI, live game log, model insight cards (`src/App.tsx`, `src/components/`)
+
+## Not yet built (next)
+
+- [ ] Train starter/bullpen into the model (needs historical probable-starter + bullpen backfill); today they apply as a prior adjustment, not trained features
+- [ ] Statcast batter metrics (xwOBA, barrel, hard-hit, chase/whiff), handedness splits, lineups, injuries, weather/park — **not ingested**; the chatbot explicitly reports these as missing rather than guessing
+- [ ] Player props; live odds movement; persistence (Postgres); RAG over historical similar situations
+
+## LLM context & data availability — TODO
+
+The chatbot can only answer as well as the context it receives. It currently gets: game state, model win prob / projected score / fair odds, recent team form, probable starters (ERA/FIP/K9), bullpen fatigue, sportsbook odds + no-vig + edge, model drivers, and **play-by-play scoring plays + last play + current batter/pitcher** (`buildBaseballContext` in `server/llm/mlbChatService.ts`). To broaden answers, add the following — each line notes the **source / how to wire it**.
+
+**A. Already fetched in the live feed — just surface to the context (cheap, do first)**
+- [ ] Per-inning linescore (R/H/E by inning) — `feed.liveData.linescore.innings`; render as a small table in `buildBaseballContext`.
+- [ ] Box-score leaders (hits, HR, RBI, K) — `feed.liveData.boxscore.teams.*.players[].stats`; list top batters/pitchers.
+- [ ] Decisions for finals (W/L/SV) — `feed.liveData.decisions`; add to the final-game context.
+- [ ] Current count + outs/leverage for live spots — `feed.liveData.linescore` (balls/strikes/outs); add a "current situation" line.
+- [ ] Batting order / batters due up — `feed.liveData.boxscore.teams.*.battingOrder` + `players[].stats`; the single highest-value live feature.
+
+**B. Fetched elsewhere in the app but not in the LLM context**
+- [ ] Probable-starter recent form / pitch counts — extend `pitcherService.ts` (StatsAPI `people/{id}/stats?stats=gameLog`).
+- [ ] Bullpen named arms / closer availability — `bullpenService.ts` already collects appearances; expose which arms are likely unavailable.
+
+**C. Not yet fetched — needs new ingestion (bigger)**
+- [ ] Statcast batter/pitcher quality (xwOBA, xERA, barrel, hard-hit, chase, whiff) — Baseball Savant via `pybaseball` (Python), cache per player/season.
+- [ ] Handedness / platoon splits — Savant or StatsAPI splits endpoint.
+- [ ] Injuries & roster moves — StatsAPI `team/{id}/roster` + `transactions`.
+- [ ] Weather & park factors — Open-Meteo (free) keyed by venue lat/lon + static park-factor table.
+- [ ] Live odds movement — persist `odds_snapshots` over time (needs storage).
+- [ ] Player props — player game logs + matchup + the prop line.
+
+> Guardrail stays intact: anything not in the context is reported as missing, never invented. As each item above lands, remove it from the `UNAVAILABLE_DATA` list in `mlbChatService.ts`.
+
+## Maps to the plan
+
+The 10-Day Build Plan (Days 1–9) and the MVP Scope below are essentially **complete** in the TS architecture. "Day 1" Postgres/Docker is intentionally **not** done (stateless design). Phase 2's "Bullpen fatigue + starting pitcher strength" is **done** as runtime features (training them in is the next step).
+
+---
+
 ## MVP Product Description
 
 **MLB Forecasting Chatbot**
@@ -1546,29 +1625,30 @@ Recommended MVP interpretation of this similarity-based scope:
 
 # Phase 2 Upgrades
 
-After the MVP works, add:
+After the MVP works, add (✅ = done, ◻️ = not yet):
 
 ```text
-Starting pitcher quality
-Bullpen fatigue
-Team offense last 14 days
-Team wRC+
-Park factor
-Weather
-Batter handedness
-Pitcher handedness
-Line movement tracking
-Pregame model
-Player prop projections
-LLM function calling
-Conversation memory
-Source citations in chatbot responses
+✅ Starting pitcher quality      (server/pitcherService.ts)
+✅ Bullpen fatigue               (server/bullpenService.ts)
+✅ Pregame model                 (XGBoost + logistic on team form)
+✅ Source-style grounding        (structured context + concept retrieval in chat)
+◻️ Team offense last 14 days
+◻️ Team wRC+
+◻️ Park factor
+◻️ Weather
+◻️ Batter handedness
+◻️ Pitcher handedness
+◻️ Line movement tracking
+◻️ Player prop projections
+◻️ LLM function calling
+◻️ Conversation memory
 ```
 
 Best next upgrade after MVP:
 
 ```text
-Bullpen fatigue + starting pitcher strength
+Bullpen fatigue + starting pitcher strength  ✅ DONE (runtime features)
+Next: train them into the pregame model via a historical starter/bullpen backfill.
 ```
 
 That makes the project feel more baseball-specific and less generic.
