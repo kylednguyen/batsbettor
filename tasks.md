@@ -52,45 +52,56 @@ The plan proposed Python/FastAPI + Postgres. The app was instead built on a **Ty
 - [x] `GET /api/predict/:gamePk` — full grounded prediction (win prob, projected score, fair odds, no-vig, edge, form, starters, bullpen, confidence, drivers, warnings)
 - [x] `GET /api/mlb/*` (schedule, scorecards, game feed, odds), `GET /api/health`, `POST /api/chat`
 
-**Chatbot / LLM**
-- [x] RAG + LLM **explanation agent** — ML computes the number, LLM only explains (`server/llm/`)
-- [x] Curated baseball **knowledge base** + dependency-free, **intent-aware TF-IDF retrieval** (`baseballKnowledge.ts`, `rag.ts`)
-- [x] **Structured baseball-context builder** with an explicit data-availability inventory, fixed analyst answer format (Direct answer / Why / Confidence / Missing data), and **anti-hallucination guardrails** (`mlbChatService.ts`)
-- [x] Swappable provider via `LLM_PROVIDER`: **Groq** (free hosted `llama-3.3-70b`, recommended), **Gemini** (free hosted), **Anthropic** (Claude), or **Ollama** local (`llama3.1:8b`)
+**Chatbot / LLM — routed MLB assistant** (`server/llm/`)
+- [x] Intent router (`intentRouter.ts`) — classifies each question: scoreboard, player, game_summary, model, odds, props, explanation, leaders, general
+- [x] Real-data context per mode (`mlbContext.ts`):
+  - [x] Today's scoreboard — one hydrated schedule call (not a feed per game)
+  - [x] Game summary — box-score top performers + decisions + scoring plays
+  - [x] Player stat lines over a time range — today (live box score), this week / last N days / last N games / season — via StatsAPI player search + gameLog / byDateRange / season
+  - [x] Sabermetrics — WAR, wRC+, wOBA on season lines; WAR leaderboard (AL/NL, hitting/pitching) for MVP / Cy Young projection
+  - [x] Grounded win-probability prediction for model / odds / explanation questions
+- [x] Curated baseball **knowledge base** + dependency-free TF-IDF retrieval for concept questions (`baseballKnowledge.ts`, `rag.ts`)
+- [x] Routed system prompt — answer baseball first and scannable; model mode separates most-likely-winner from best-value bet; declines individual-player futures; anti-hallucination guardrails
+- [x] Swappable provider via `LLM_PROVIDER`: **Groq** / **Gemini** (free hosted), **Anthropic**, or **Ollama** local
 
-**Frontend**
-- [x] Chat UI, live game log, model insight cards (`src/App.tsx`, `src/components/`)
+**Frontend — ChatGPT-style workspace** (`src/App.tsx`, `src/components/`)
+- [x] Stable three-column shell: sidebar | centered chat | attached game-preview panel (no floating pop-outs)
+- [x] Sidebar game cards — live / upcoming / final states, live pulse dot, aligned tabular scores, single clean active state
+- [x] Centered chat empty state + prompt grid, bottom-anchored composer, markdown answer renderer
+- [x] Preview panel — anchored scoreboard (visible across tabs) + Overview / Model / Props / Box Score / Feed tabs
+- [x] Model cards separate most-likely-winner from best-value bet; proper base diamond; subtle reduced-motion-safe animations
 
 ## Not yet built (next)
 
-- [ ] Train starter/bullpen into the model (needs historical probable-starter + bullpen backfill); today they apply as a prior adjustment, not trained features
-- [ ] Statcast batter metrics (xwOBA, barrel, hard-hit, chase/whiff), handedness splits, lineups, injuries, weather/park — **not ingested**; the chatbot explicitly reports these as missing rather than guessing
-- [ ] Player props; live odds movement; persistence (Postgres); RAG over historical similar situations
+- [ ] Player-prop projection model (chat reports props as not modeled yet)
+- [ ] Train starter/bullpen into the pregame model (needs historical probable-starter + bullpen backfill); today they apply as a bounded prior adjustment
+- [ ] Statcast batter/pitcher quality (xwOBA, barrel, hard-hit, chase/whiff), handedness splits, lineups, injuries, weather/park — not ingested; reported as missing
+- [ ] Live odds movement; persistence (Postgres); RAG over historical similar situations
+- [ ] Promote Box Score and Feed to top-level preview tabs (currently nested under Overview's sub-views)
 
-## LLM context & data availability — TODO
+## LLM context & data availability
 
-The chatbot can only answer as well as the context it receives. It currently gets: game state, model win prob / projected score / fair odds, recent team form, probable starters (ERA/FIP/K9), bullpen fatigue, sportsbook odds + no-vig + edge, model drivers, and **play-by-play scoring plays + last play + current batter/pitcher** (`buildBaseballContext` in `server/llm/mlbChatService.ts`). To broaden answers, add the following — each line notes the **source / how to wire it**.
+The assistant routes over real data per question (`server/llm/mlbContext.ts`). Available now: today's scoreboard; a game's box-score top performers + scoring plays; player stat lines over today / this week / last N games / season including WAR, wRC+, wOBA; the WAR leaderboard for MVP/Cy Young; and the grounded win-probability prediction (game state, model win prob / projected score / fair odds, recent form, probable starters, bullpen, edge, play-by-play). Still to add — each line notes the source / how to wire it:
 
-**A. Already fetched in the live feed — just surface to the context (cheap, do first)**
-- [ ] Per-inning linescore (R/H/E by inning) — `feed.liveData.linescore.innings`; render as a small table in `buildBaseballContext`.
-- [ ] Box-score leaders (hits, HR, RBI, K) — `feed.liveData.boxscore.teams.*.players[].stats`; list top batters/pitchers.
-- [ ] Decisions for finals (W/L/SV) — `feed.liveData.decisions`; add to the final-game context.
-- [ ] Current count + outs/leverage for live spots — `feed.liveData.linescore` (balls/strikes/outs); add a "current situation" line.
-- [ ] Batting order / batters due up — `feed.liveData.boxscore.teams.*.battingOrder` + `players[].stats`; the single highest-value live feature.
+**Already fetched — could surface more**
+- [x] Box-score top performers and scoring plays (done — game summary mode)
+- [x] Play-by-play scoring plays in the prediction context (done)
+- [ ] Per-inning linescore (R/H/E) table — `feed.liveData.linescore.innings`
+- [ ] Batting order / batters due up — `boxscore.teams.*.battingOrder`; highest-value live add
 
-**B. Fetched elsewhere in the app but not in the LLM context**
-- [ ] Probable-starter recent form / pitch counts — extend `pitcherService.ts` (StatsAPI `people/{id}/stats?stats=gameLog`).
-- [ ] Bullpen named arms / closer availability — `bullpenService.ts` already collects appearances; expose which arms are likely unavailable.
+**Fetched elsewhere, not yet in chat context**
+- [ ] Probable-starter recent form / pitch counts in the model context
+- [ ] Named bullpen arms / closer availability
 
-**C. Not yet fetched — needs new ingestion (bigger)**
-- [ ] Statcast batter/pitcher quality (xwOBA, xERA, barrel, hard-hit, chase, whiff) — Baseball Savant via `pybaseball` (Python), cache per player/season.
-- [ ] Handedness / platoon splits — Savant or StatsAPI splits endpoint.
-- [ ] Injuries & roster moves — StatsAPI `team/{id}/roster` + `transactions`.
-- [ ] Weather & park factors — Open-Meteo (free) keyed by venue lat/lon + static park-factor table.
-- [ ] Live odds movement — persist `odds_snapshots` over time (needs storage).
-- [ ] Player props — player game logs + matchup + the prop line.
+**Not yet fetched — needs new ingestion**
+- [ ] Statcast batter/pitcher quality (xwOBA, xERA, barrel, hard-hit, chase, whiff) — Baseball Savant via `pybaseball`
+- [ ] Handedness / platoon splits — Savant or StatsAPI splits endpoint
+- [ ] Injuries & roster moves — StatsAPI `team/{id}/roster` + `transactions`
+- [ ] Weather & park factors — Open-Meteo + a static park-factor table
+- [ ] Live odds movement — persist odds snapshots over time
+- [ ] Player props — player game logs + matchup + prop line + a projection model
 
-> Guardrail stays intact: anything not in the context is reported as missing, never invented. As each item above lands, remove it from the `UNAVAILABLE_DATA` list in `mlbChatService.ts`.
+> Guardrail stays intact: anything not in the context is reported as missing, never invented.
 
 ## Maps to the plan
 
@@ -1625,29 +1636,32 @@ Recommended MVP interpretation of this similarity-based scope:
 
 # Phase 2 Upgrades
 
-After the MVP works, add (✅ = done, ◻️ = not yet):
+After the MVP works, add ([x] = done, [ ] = not yet):
 
 ```text
-✅ Starting pitcher quality      (server/pitcherService.ts)
-✅ Bullpen fatigue               (server/bullpenService.ts)
-✅ Pregame model                 (XGBoost + logistic on team form)
-✅ Source-style grounding        (structured context + concept retrieval in chat)
-◻️ Team offense last 14 days
-◻️ Team wRC+
-◻️ Park factor
-◻️ Weather
-◻️ Batter handedness
-◻️ Pitcher handedness
-◻️ Line movement tracking
-◻️ Player prop projections
-◻️ LLM function calling
-◻️ Conversation memory
+[x] Starting pitcher quality      (server/pitcherService.ts)
+[x] Bullpen fatigue               (server/bullpenService.ts)
+[x] Pregame model                 (XGBoost + logistic on team form)
+[x] Source-style grounding        (structured context + concept retrieval in chat)
+[x] Routed assistant              (intent router + per-mode real-data context)
+[x] Player stats over time ranges (today / week / last N games / season, incl. WAR)
+[x] WAR leaderboard + MVP/Cy Young projection
+[ ] Team offense last 14 days
+[ ] Team wRC+
+[ ] Park factor
+[ ] Weather
+[ ] Batter handedness
+[ ] Pitcher handedness
+[ ] Line movement tracking
+[ ] Player prop projections
+[ ] LLM function calling
+[ ] Conversation memory
 ```
 
 Best next upgrade after MVP:
 
 ```text
-Bullpen fatigue + starting pitcher strength  ✅ DONE (runtime features)
+Bullpen fatigue + starting pitcher strength  DONE (runtime features)
 Next: train them into the pregame model via a historical starter/bullpen backfill.
 ```
 
@@ -1658,13 +1672,13 @@ That makes the project feel more baseball-specific and less generic.
 # Resume Bullets
 
 ```text
-Built an MLB forecasting chatbot that answers natural-language questions about live win probability, projected final score, sportsbook odds, fair moneyline pricing, and model-vs-market differences.
+Built BatsBet, a live MLB assistant (React + TypeScript front end, Node + Express + Socket.IO back end) that routes natural-language questions over real MLB StatsAPI data — scoreboard, player stat lines over arbitrary time ranges (including WAR, wRC+, wOBA), game summaries, MVP/Cy Young projections from the WAR leaderboard, odds explanations, and a win-probability model.
 
-Developed ingestion pipelines for MLB StatsAPI live feeds, pybaseball Statcast data, and sportsbook odds, storing normalized game snapshots, odds snapshots, model predictions, and chat logs in Postgres.
+Implemented an intent router and per-mode data layer that fetches only the data each question needs (one hydrated schedule call for the scoreboard, box-score performers and scoring plays for summaries, player search plus game-log/date-range/season stats for player questions), with anti-hallucination guardrails that report missing data instead of inventing it.
 
-Trained calibrated machine learning models on historical pitch-level game states to estimate live win probability using inning, score differential, outs, base runners, count, batting team, and market-implied probabilities.
+Trained an XGBoost pregame win-probability classifier on ~4,800 historical games using rolling last-10/last-30 team form, exported it as a flattened tree ensemble, and ran inference in-process in TypeScript with verified parity; layered an analytic live win-probability and score-projection engine (base/out run expectancy, extra-innings handling) and odds math (vig removal, fair moneylines, model-vs-market edge) on top.
 
-Implemented a chatbot orchestration layer with intent detection, prediction retrieval tools, odds translation utilities, and response generation for live sports analytics questions.
+Designed a ChatGPT-style three-column workspace (sidebar, centered chat, attached game-preview panel with an anchored scoreboard and Overview/Model/Props/Box Score/Feed tabs) and a swappable LLM provider seam (Groq, Gemini, Anthropic, or local Ollama) where the model computes every number and the LLM only explains.
 ```
 
 ---
@@ -1672,5 +1686,5 @@ Implemented a chatbot orchestration layer with intent detection, prediction retr
 # One-Sentence Portfolio Description
 
 ```text
-An AI-powered MLB forecasting chatbot that combines live game feeds, historical Statcast data, sportsbook odds, and calibrated machine learning models to answer natural-language questions about win probability, projected score, fair odds, and model-vs-market differences.
+BatsBet is a live MLB assistant that routes natural-language questions over real MLB data — scores, player stats over any time range (including WAR), game summaries, and MVP projections — with a win-probability and betting-value model layered on top that separates the most likely winner from the best value bet.
 ```

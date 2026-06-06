@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io, Socket } from 'socket.io-client'
-import { EditPencil, Flash, GraphUp, Dollar, Xmark, NavArrowLeft, NavArrowRight, SidebarCollapse, SidebarExpand, Expand, Collapse } from 'iconoir-react'
+import { EditPencil, Flash, GraphUp, Dollar, Xmark, NavArrowLeft, NavArrowRight } from 'iconoir-react'
 import { MiniBaseballDiamond } from './components/BaseballDiamond'
 import { SidebarGameItemSkeleton, GamePanelSkeleton } from './components/Skeleton'
 import { ChatInput } from './components/ChatInput'
 import { ChatWindow } from './components/ChatWindow'
-import { SelectedGamePanel } from './components/SelectedGamePanel'
-import { ModelInsights } from './components/ModelInsights'
+import { SelectedGamePanel, GamePreviewScoreboard } from './components/SelectedGamePanel'
+import { ModelInsights, ModelTakeaway } from './components/ModelInsights'
 import { getGameFeed, getPrediction, getScoreCardsByDate, getTodayScoreCardSummary, sendChatMessage } from './api/client'
 
 import type { ScoreCard, ScoreBox, ChatMessage, Prediction } from './types'
@@ -48,11 +48,15 @@ function formatGameRow(card: ScoreCard): string {
   return `${card.awayAbbreviation} @ ${card.homeAbbreviation} ${card.awayScore ?? '-'} - ${card.homeScore ?? '-'}`
 }
 
-function formatSidebarGameMeta(card: ScoreCard): string {
-  if (card.statusCode === 'P') {
-    return card.homeMoneylineDisplay ? `${card.homeAbbreviation} ${card.homeMoneylineDisplay}` : '--'
-  }
-  return `${card.awayScore ?? '-'} - ${card.homeScore ?? '-'}`
+function formatGameTime(card: ScoreCard): string {
+  if (!card.gameDate) return ''
+  const date = new Date(card.gameDate)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 function shiftEasternDate(baseDateString: string, deltaDays: number): string {
@@ -112,10 +116,7 @@ export default function App() {
   const [sidebarDateCards, setSidebarDateCards] = useState<ScoreCard[]>([])
   const [sidebarDateLoading, setSidebarDateLoading] = useState(false)
   const [slateLoading, setSlateLoading] = useState(true)
-  const [gameDock, setGameDock] = useState<'left' | 'right'>(
-    () => (typeof localStorage !== 'undefined' && localStorage.getItem('gameDock') === 'left' ? 'left' : 'right')
-  )
-  const [workspaceView, setWorkspaceView] = useState<'split' | 'chatOnly' | 'gameOnly'>('split')
+  const [panelTab, setPanelTab] = useState<'overview' | 'model' | 'props' | 'boxscore' | 'feed'>('overview')
   const today = getEasternDateString()
   const socketRef = useRef<Socket | null>(null)
   const selectedGamePkRef = useRef<number | null>(null)
@@ -351,24 +352,12 @@ export default function App() {
   function handleSelectGame(card: ScoreCard) {
     setSelectedGamePk(card.gamePk)
     setSelectedGameCard(card)
-  }
-
-  function toggleGameDock() {
-    setGameDock((prev) => {
-      const next = prev === 'right' ? 'left' : 'right'
-      try {
-        localStorage.setItem('gameDock', next)
-      } catch {
-        // ignore storage failures
-      }
-      return next
-    })
+    setPanelTab('overview')
   }
 
   function closeSelectedGame() {
     setSelectedGamePk(null)
     setSelectedGameCard(null)
-    setWorkspaceView('split')
   }
 
   function handleNewChat() {
@@ -401,7 +390,7 @@ export default function App() {
   }
 
   return (
-    <main className="chatgame-shell">
+    <main className={`chatgame-shell${selectedCard ? ' chatgame-shell--with-preview' : ''}`}>
       <aside className="chatgame-sidebar">
         <div className="chatgame-sidebar__header">
           <span className="sidebar-logo">BatsBet</span>
@@ -469,38 +458,60 @@ export default function App() {
               {(slateLoading || sidebarDateLoading) && visibleSidebarCards.length === 0
                 ? Array.from({ length: 5 }).map((_, i) => <SidebarGameItemSkeleton key={i} />)
                 : null}
-              {visibleSidebarCards.map((card) => (
-                <button
-                  className={`sidebar-game-item${card.gamePk === selectedCard?.gamePk ? ' active' : ''}${card.statusCode === 'L' ? ' sidebar-game-item--live' : ''}`}
-                  key={card.gamePk}
-                  onClick={() => handleSelectGame(card)}
-                  title={formatGameRow(card)}
-                  type="button"
-                >
-                  <span className="sidebar-game-item__matchup">
-                    <span className="sidebar-game-item__teams">
-                      {card.awayAbbreviation} @ {card.homeAbbreviation}
-                    </span>
-                    {card.statusCode === 'L' ? (
-                      <span className="sidebar-game-item__live-row">
-                        <span className="sidebar-game-item__inning">
-                          {card.inningState === 'Top' || card.inningState === 'Middle' ? '▲' : '▼'}
-                          {card.inning}
-                        </span>
-                        <MiniBaseballDiamond baseState={card.baseState} />
-                        {card.outs != null && (
-                          <span className="sidebar-game-item__outs">
-                            {card.outs} {card.outs === 1 ? 'out' : 'outs'}
-                          </span>
-                        )}
+              {visibleSidebarCards.map((card) => {
+                const isLive = card.statusCode === 'L'
+                const isFinal = card.statusCode === 'F'
+                const hasScore = isLive || isFinal
+                const awayLeads = hasScore && card.awayScore != null && card.homeScore != null && card.awayScore > card.homeScore
+                const homeLeads = hasScore && card.awayScore != null && card.homeScore != null && card.homeScore > card.awayScore
+                const inningArrow = card.inningState === 'Top' || card.inningState === 'Middle' ? '▲' : '▼'
+                return (
+                  <button
+                    className={`sidebar-game-item${card.gamePk === selectedCard?.gamePk ? ' active' : ''}${isLive ? ' sidebar-game-item--live' : ''}${isFinal ? ' sidebar-game-item--final' : ''}`}
+                    key={card.gamePk}
+                    onClick={() => handleSelectGame(card)}
+                    title={formatGameRow(card)}
+                    type="button"
+                  >
+                    <span className="sidebar-game-item__matchup">
+                      <span className="sidebar-game-item__teams">
+                        {card.awayAbbreviation} <span className="sidebar-game-item__at">@</span> {card.homeAbbreviation}
                       </span>
-                    ) : null}
-                  </span>
-                  <span className="sidebar-game-item__score">
-                    {formatSidebarGameMeta(card)}
-                  </span>
-                </button>
-              ))}
+                      <span className="sidebar-game-item__sub">
+                        {isLive ? (
+                          <>
+                            <span className="sidebar-game-item__livedot" aria-hidden="true" />
+                            <span className="sidebar-game-item__inning">
+                              {inningArrow}{card.inning}
+                            </span>
+                            <MiniBaseballDiamond baseState={card.baseState} />
+                            {card.outs != null && (
+                              <span className="sidebar-game-item__outs">{card.outs} out</span>
+                            )}
+                          </>
+                        ) : isFinal ? (
+                          <span className="sidebar-game-item__status">Final</span>
+                        ) : card.homeMoneylineDisplay ? (
+                          <span className="sidebar-game-item__status">
+                            {card.homeAbbreviation} {card.homeMoneylineDisplay}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    <span className="sidebar-game-item__meta">
+                      {hasScore ? (
+                        <span className="sidebar-game-item__scoreline">
+                          <span className={awayLeads ? 'lead' : ''}>{card.awayScore ?? '-'}</span>
+                          <span className="dash">–</span>
+                          <span className={homeLeads ? 'lead' : ''}>{card.homeScore ?? '-'}</span>
+                        </span>
+                      ) : (
+                        <span className="sidebar-game-item__time">{formatGameTime(card)}</span>
+                      )}
+                    </span>
+                  </button>
+                )
+              })}
               {(isSidebarGamesExpanded ? sidebarDateCards.length === 0 : sortedScoreCards.length === 0) && !slateLoading && !sidebarDateLoading && (
                 <div className="sidebar-empty-row">
                   {scoreError || 'No games yet.'}
@@ -529,161 +540,129 @@ export default function App() {
         </div>
       </aside>
 
-      <section className="chatgame-main">
-        {!selectedCard ? (
-          <div className="chat-home-screen">
-            {messages.length === 0 && !chatLoading ? (
-              <>
-                <h1>How can I help, Kyle?</h1>
-                <div className="chat-home-screen__composer">
-                  <ChatInput minimal prompt={prompt} setPrompt={setPrompt} onSubmit={handleSendMessage} disabled={chatLoading} />
-                  <div className="quick-prompts-row">
-                    {quickPrompts.map((p) => (
-                      <button
-                        className="quick-prompt-chip"
-                        key={p}
-                        onClick={() => setPrompt(p)}
-                        type="button"
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
+      <section className="chatgame-main main-workspace">
+        <header className="main-chat-header">
+          <span className="main-chat-header__title">{isNewChat ? 'New chat' : 'Assistant'}</span>
+          {selectedCard ? (
+            <span className="main-chat-header__context">{selectedCard.awayAbbreviation} @ {selectedCard.homeAbbreviation}</span>
+          ) : null}
+        </header>
+
+        <div className="main-chat-scroll">
+          {messages.length === 0 && !chatLoading ? (
+            <div className="main-chat-empty">
+              <div className="main-chat-empty-inner">
+                <h1 className="main-chat-empty__title">How can I help, Kyle?</h1>
+                <p className="main-chat-empty__sub">
+                  {selectedCard
+                    ? 'Ask about this game — win probability, the pitching matchup, bullpen rest, fair odds, or the model edge.'
+                    : 'Ask about live games, win probability, projected scores, fair odds, or the biggest model-vs-book edges.'}
+                </p>
+                <div className="prompt-grid">
+                  {(selectedCard
+                    ? ['Who does the model favor and why?', 'How do the starting pitchers compare?', 'Is there an edge vs the book?', 'What is the projected final score?']
+                    : quickPrompts
+                  ).map((p) => (
+                    <button className="prompt-card" key={p} onClick={() => setPrompt(p)} type="button">
+                      {p}
+                    </button>
+                  ))}
                 </div>
-              </>
-            ) : (
-              <div className="chat-thread-shell">
-                <ChatWindow messages={messages} loading={chatLoading} />
-                <ChatInput prompt={prompt} setPrompt={setPrompt} onSubmit={handleSendMessage} disabled={chatLoading} />
               </div>
-            )}
-          </div>
-        ) : (
-          <div
-            className={`game-workspace game-workspace--${gameDock} game-workspace--${workspaceView}`}
-          >
-            {workspaceView !== 'chatOnly' && (
-              <aside className="game-side">
-                <div className="game-side__bar">
-                  <span className="game-side__title">
-                    {selectedCard.awayAbbreviation} @ {selectedCard.homeAbbreviation}
-                  </span>
-                  <div className="game-side__actions">
-                    {workspaceView === 'split' && (
-                      <button
-                        className="icon-btn"
-                        onClick={toggleGameDock}
-                        title={gameDock === 'right' ? 'Dock left' : 'Dock right'}
-                        type="button"
-                      >
-                        {gameDock === 'right' ? <NavArrowLeft width={16} height={16} /> : <NavArrowRight width={16} height={16} />}
-                      </button>
-                    )}
-                    <button
-                      className="icon-btn"
-                      onClick={() => setWorkspaceView(workspaceView === 'gameOnly' ? 'split' : 'gameOnly')}
-                      title={workspaceView === 'gameOnly' ? 'Restore split view' : 'Expand game'}
-                      type="button"
-                    >
-                      {workspaceView === 'gameOnly' ? <Collapse width={16} height={16} /> : <Expand width={16} height={16} />}
-                    </button>
-                    {workspaceView === 'split' && (
-                      <button
-                        className="icon-btn"
-                        onClick={() => setWorkspaceView('chatOnly')}
-                        title="Hide panel (expand chat)"
-                        type="button"
-                      >
-                        <SidebarCollapse width={16} height={16} />
-                      </button>
-                    )}
-                    <button className="icon-btn" onClick={closeSelectedGame} title="Close game" type="button">
-                      <Xmark width={16} height={16} />
-                    </button>
-                  </div>
-                </div>
-                <div className="game-side__scroll">
-                  {selectedGameLoading && !selectedGameFeed ? (
-                    <GamePanelSkeleton />
-                  ) : (
-                    <>
-                      <ModelInsights
-                        prediction={prediction}
-                        loading={predictionLoading}
-                        error={predictionError}
-                      />
-                      <SelectedGamePanel
-                        gameFeed={selectedGameFeed}
-                        loading={selectedGameLoading}
-                        scoreError={scoreError}
-                        selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
-                        today={today}
-                      />
-                    </>
-                  )}
-                </div>
-              </aside>
-            )}
+            </div>
+          ) : (
+            <ChatWindow messages={messages} loading={chatLoading} />
+          )}
+        </div>
 
-            {workspaceView !== 'gameOnly' && (
-              <section className="chat-main">
-                <div className="chat-main__header">
-                  <div className="chat-main__heading">
-                    {workspaceView === 'chatOnly' && (
-                      <button
-                        className="icon-btn"
-                        onClick={() => setWorkspaceView('split')}
-                        title="Show game panel"
-                        type="button"
-                      >
-                        <SidebarExpand width={16} height={16} />
-                      </button>
-                    )}
-                    <div>
-                      <p className="section-label">Assistant</p>
-                      <h1 className="chat-main__title">{selectedCard.matchup}</h1>
-                    </div>
-                  </div>
-                  <div className="game-side__actions">
-                    <button
-                      className="icon-btn"
-                      onClick={() => setWorkspaceView(workspaceView === 'chatOnly' ? 'split' : 'chatOnly')}
-                      title={workspaceView === 'chatOnly' ? 'Restore split view' : 'Expand chat'}
-                      type="button"
-                    >
-                      {workspaceView === 'chatOnly' ? <Collapse width={16} height={16} /> : <Expand width={16} height={16} />}
-                    </button>
-                    <button className="icon-btn" onClick={closeSelectedGame} title="Close game" type="button">
-                      <Xmark width={16} height={16} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="chat-main__stream">
-                  {messages.length === 0 && !chatLoading ? (
-                    <div className="chat-main__empty">
-                      <p>Ask about this game — win probability, the pitching matchup, bullpen rest, fair odds, or the model's edge.</p>
-                      <div className="quick-prompts-row quick-prompts-row--game">
-                        {['Who does the model favor and why?', 'How do the starting pitchers compare?', 'Is there an edge vs the book?', 'What is the projected final score?'].map((p) => (
-                          <button className="quick-prompt-chip" key={p} onClick={() => setPrompt(p)} type="button">
-                            {p}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <ChatWindow messages={messages} loading={chatLoading} />
-                  )}
-                </div>
-
-                <div className="chat-main__composer">
-                  <ChatInput prompt={prompt} setPrompt={setPrompt} onSubmit={handleSendMessage} disabled={chatLoading} />
-                </div>
-              </section>
-            )}
-          </div>
-        )}
+        <div className="chat-composer-shell">
+          <ChatInput prompt={prompt} setPrompt={setPrompt} onSubmit={handleSendMessage} disabled={chatLoading} />
+        </div>
       </section>
+
+      {selectedCard ? (
+        <aside className="game-preview-panel" aria-label="Game preview">
+          <header className="game-preview-header">
+            <div className="game-preview-header__top">
+              <span className="game-preview-header__title">{selectedCard.matchup}</span>
+              <button className="icon-btn" onClick={closeSelectedGame} title="Close preview" type="button">
+                <Xmark width={16} height={16} />
+              </button>
+            </div>
+            {/* Scoreboard is anchored here so it stays visible across every tab */}
+            <GamePreviewScoreboard
+              gameFeed={selectedGameFeed}
+              selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
+            />
+            <div className="game-preview-tabs" role="tablist" aria-label="Game preview tabs">
+              {([
+                { id: 'overview', label: 'Overview' },
+                { id: 'model', label: 'Model' },
+                { id: 'props', label: 'Props' },
+                { id: 'boxscore', label: 'Box Score' },
+                { id: 'feed', label: 'Feed' },
+              ] as const).map((tab) => (
+                <button
+                  className={`game-preview-tab${panelTab === tab.id ? ' game-preview-tab--active' : ''}`}
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={panelTab === tab.id}
+                  onClick={() => setPanelTab(tab.id)}
+                  type="button"
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </header>
+
+          <div className="game-preview-scroll">
+            {selectedGameLoading && !selectedGameFeed ? (
+              <GamePanelSkeleton />
+            ) : panelTab === 'model' ? (
+              <ModelInsights prediction={prediction} loading={predictionLoading} error={predictionError} />
+            ) : panelTab === 'props' ? (
+              <div className="preview-empty">
+                <p className="preview-empty__title">Player props</p>
+                <p className="preview-empty__text">
+                  Player prop projections aren’t available yet. The model currently focuses on team win
+                  probability, projected score, fair odds, and market edge.
+                </p>
+              </div>
+            ) : panelTab === 'boxscore' ? (
+              <SelectedGamePanel
+                view="boxscore"
+                gameFeed={selectedGameFeed}
+                loading={selectedGameLoading}
+                scoreError={scoreError}
+                selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
+                today={today}
+              />
+            ) : panelTab === 'feed' ? (
+              <SelectedGamePanel
+                view="feed"
+                gameFeed={selectedGameFeed}
+                loading={selectedGameLoading}
+                scoreError={scoreError}
+                selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
+                today={today}
+              />
+            ) : (
+              <>
+                <ModelTakeaway prediction={prediction} onViewModel={() => setPanelTab('model')} />
+                <SelectedGamePanel
+                  view="overview"
+                  gameFeed={selectedGameFeed}
+                  loading={selectedGameLoading}
+                  scoreError={scoreError}
+                  selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
+                  today={today}
+                />
+              </>
+            )}
+          </div>
+        </aside>
+      ) : null}
     </main>
   )
 }

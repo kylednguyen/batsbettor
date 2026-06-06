@@ -40,20 +40,26 @@ interface MiniBaseballDiamondProps {
   baseState?: string | null
 }
 
+// Proper baseball-diamond layout: 2nd top-center, 3rd middle-left, 1st
+// middle-right, home bottom-center. Each base is a 45°-rotated square; occupied
+// bases are filled red, empty are muted. The grid never shifts when score text
+// changes because every base is absolutely positioned in a fixed-size box.
 export function MiniBaseballDiamond({ baseState }: MiniBaseballDiamondProps) {
   const occupied = getOccupiedBases(baseState)
   const label = baseState && baseState !== 'Bases empty' ? baseState : undefined
 
   return (
-    <div
+    <span
       aria-hidden={label ? undefined : true}
       aria-label={label}
-      className="mini-diamond"
+      className="base-diamond"
+      role={label ? 'img' : undefined}
       title={label}
     >
-      <span className={`mini-base mini-base--first${occupied.first ? ' mini-base--occupied' : ''}`} />
-      <span className={`mini-base mini-base--second${occupied.second ? ' mini-base--occupied' : ''}`} />
-      <span className={`mini-base mini-base--third${occupied.third ? ' mini-base--occupied' : ''}`} />
-    </div>
+      <span className={`base base--second${occupied.second ? ' base--occupied' : ''}`} />
+      <span className={`base base--third${occupied.third ? ' base--occupied' : ''}`} />
+      <span className={`base base--first${occupied.first ? ' base--occupied' : ''}`} />
+      <span className="base base--home" />
+    </span>
   )
 }

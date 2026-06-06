@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ScoreCard, MlbFeedPayload, StatEntry, PitchEvent, PitchLocation, MlbPerson, MlbTeam } from '../types'
 import { BaseballDiamond as _BaseballDiamond, MiniBaseballDiamond } from './BaseballDiamond'
 
@@ -1251,15 +1251,44 @@ function ScheduledView({ scheduledContext, selectedCard }: ScheduledViewProps) {
 // ScoreBox has a compatible subset of ScoreCard fields; accept both
 export type SelectedCardLike = ScoreCard | import('../types').ScoreBox | null | undefined
 
+// Persistent scoreboard for the preview panel — rendered once at the top of the
+// panel so the score stays visible across every tab.
+export function GamePreviewScoreboard({
+  gameFeed,
+  selectedCard,
+}: {
+  gameFeed: MlbFeedPayload | null
+  selectedCard: SelectedCardLike
+}) {
+  const card = selectedCard as ScoreCard | null | undefined
+  const statusText: string | null = gameFeed?.gameData?.status?.detailedState ?? card?.status ?? null
+  const statusCode: string | null = gameFeed?.gameData?.status?.abstractGameCode ?? card?.statusCode ?? null
+  const statusBucket = getStatusBucket(statusCode, statusText)
+  const awayTeam: MlbTeam | null = gameFeed?.gameData?.teams?.away ?? null
+  const homeTeam: MlbTeam | null = gameFeed?.gameData?.teams?.home ?? null
+  return (
+    <SelectedGameScorebug
+      awayTeam={awayTeam}
+      homeTeam={homeTeam}
+      selectedCard={card}
+      statusBucket={statusBucket}
+      statusText={statusText}
+    />
+  )
+}
+
 export interface SelectedGamePanelProps {
   gameFeed: MlbFeedPayload | null
   loading: boolean
   selectedCard: SelectedCardLike
   scoreError: string
   today: string
+  // When set, the panel renders a single section (driven by the parent's tabs)
+  // instead of its own internal Live feed / Box score / Summary tabs.
+  view?: 'overview' | 'boxscore' | 'feed'
 }
 
-export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError: _scoreError }: SelectedGamePanelProps) {
+export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError: _scoreError, view }: SelectedGamePanelProps) {
   // Cast to ScoreCard for internal use — ScoreBox has compatible fields
   const card = selectedCard as ScoreCard | null | undefined
   const statusText: string | null = gameFeed?.gameData?.status?.detailedState ?? card?.status ?? null
@@ -1296,6 +1325,46 @@ export function SelectedGamePanel({ gameFeed, loading, selectedCard, scoreError:
     if (statusBucket === 'final') { setActiveTab('boxscore'); return }
     setActiveTab('feed')
   }, [card?.gamePk, statusBucket])
+
+  // Parent-driven single-section render (panel tabs own the navigation).
+  if (view) {
+    let inner: ReactNode = null
+    if (loading) {
+      inner = <div className="detail-card"><p>Loading game detail…</p></div>
+    } else if (view === 'overview') {
+      inner =
+        statusBucket === 'live' && liveContext ? (
+          <LiveView awayTeam={awayTeam} boxScoreContext={boxScoreContext} homeTeam={homeTeam} liveContext={liveContext} selectedCard={card} />
+        ) : statusBucket === 'scheduled' && scheduledContext ? (
+          <ScheduledView scheduledContext={scheduledContext} selectedCard={card} />
+        ) : statusBucket === 'final' ? (
+          <p className="preview-note">This game is final — open <strong>Box Score</strong> or <strong>Feed</strong> for the details.</p>
+        ) : null
+    } else if (view === 'boxscore') {
+      inner = boxScoreContext ? (
+        <BoxScoreView boxScoreContext={boxScoreContext} title={statusBucket === 'final' ? 'Final box score' : 'Box score'} />
+      ) : (
+        <p className="preview-note">The box score will be available once the game starts.</p>
+      )
+    } else {
+      // feed
+      inner = boxScoreContext?.scoringEvents?.length ? (
+        <ScoringSummary
+          awayAbbreviation={boxScoreContext?.innings?.rows?.[0]?.team}
+          events={boxScoreContext?.scoringEvents}
+          homeAbbreviation={boxScoreContext?.innings?.rows?.[1]?.team}
+        />
+      ) : statusBucket === 'scheduled' ? (
+        <p className="preview-note">Play-by-play will appear here once the game starts.</p>
+      ) : (
+        <p className="preview-note">No scoring plays yet.</p>
+      )
+    }
+
+    // Scoreboard is anchored at the panel level (GamePreviewScoreboard), so the
+    // per-tab views no longer render their own.
+    return <div className="game-panel-view">{inner}</div>
+  }
 
   return (
     <section className="score-box hero-score-box">

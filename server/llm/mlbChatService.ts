@@ -12,6 +12,17 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getPredictionForGame, type Prediction } from '../predictionService.js'
 import { retrieve, type RetrievedDoc } from './rag.js'
+import { detectIntent, type ChatIntent } from './intentRouter.js'
+import {
+  getTodayCards,
+  buildScoreboardText,
+  findMatchingCards,
+  buildGameSummary,
+  findPlayerLines,
+  getPlayerStats,
+  buildLeadersContext,
+} from './mlbContext.js'
+import { getEasternDateString } from '../dateUtils.js'
 import type { ScoreCard } from '../../src/types.js'
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
@@ -49,41 +60,27 @@ const UNAVAILABLE_DATA = [
   'individual player props and game logs',
 ]
 
-const SYSTEM_PROMPT = `You are BattersBetter, an MLB analyst built into a live win-probability app.
+const SYSTEM_PROMPT = `You are BatsBet, a live MLB assistant. You are a general baseball game assistant with betting/model intelligence layered on top — NOT only a betting bot.
 
-Answer like a sharp, concise baseball analyst. Reason using the factors that actually drive MLB outcomes, but ONLY when they are present in BASEBALL CONTEXT:
-- starting pitcher matchup (ERA, FIP, K/9)
-- bullpen fatigue and availability (recent pitch load, back-to-back arms)
-- recent team form (last 10/30 games, run differential)
-- live game state (inning, score, base/out state, leverage)
-- odds and implied (no-vig) probability, and the model-vs-market edge
-- lineup strength, platoon/handedness, and Statcast quality (xwOBA, barrel rate, etc.) WHEN provided
+Answer the user's baseball question FIRST. Add model/betting context only when it's relevant or asked for. Never force a betting answer onto a plain baseball question.
 
-Division of labor:
-- The ML model computes the win probability and projected score. You explain and contextualize them — you never compute, re-estimate, or guess probabilities yourself.
-- Use the RETRIEVED BASEBALL CONCEPTS only to explain what a term means or why a factor matters, never as a source of game-specific numbers.
+The request has a DETECTED INTENT and grounded data sections. Use them:
+- SCOREBOARD → list today's games with score + status (live inning or Final). Keep it a clean list.
+- PLAYER (e.g. "what did Judge do today?") → give the player's stat line and key events from PLAYER STAT LINES. For hitters lead with AB/H/HR/RBI/BB/K and total bases; for pitchers IP/H/ER/BB/K and the decision.
+- GAME SUMMARY → final/live score, top performers, key scoring plays, from GAME SUMMARY.
+- MODEL → give BOTH, clearly separated: (1) Most likely winner (highest model win probability) and (2) Best value bet (largest positive edge vs the book's vig-free probability). They can be different teams; if so say e.g. "KC is more likely to win, but MIN is the better value at +378." Never say "model leans MIN" when MIN is only the value side.
+- ODDS → odds, implied probability, the model's fair odds, and whether the price looks good, with a one-line why.
+- EXPLANATION → concise bullets; separate baseball reasons from market reasons.
+- PROPS → player props are not modeled yet; say so plainly and offer the player's recent line if available.
+- LEADERS / MVP / CY YOUNG → rank the candidates by WAR from STAT LEADERS (WAR is the standard award basis). Name the front-runner and 2-3 challengers, each with a one-line why (WAR, plus wRC+/wOBA for hitters). Note WAR is the basis and that real voting also weighs team success/narrative. Project a likely winner but frame it as a projection, not a lock.
 
-Strict rules (no hallucinations):
-- Use ONLY the figures in BASEBALL CONTEXT. Never invent or approximate values.
-- Never invent: injuries, odds, player stats, pitcher names, live scores, Statcast/Savant metrics, weather, or lineups.
-- If the data needed to answer is not in BASEBALL CONTEXT, do not guess. Say: "I do not have enough data for that yet. I would need [specific missing data]." and list it under Missing data.
-- This is an analytics/portfolio project, not betting advice.
-
-Always respond in EXACTLY this format:
-
-Direct answer:
-<1-2 sentences that directly answer the question>
-
-Why:
-- <reason tied to a specific number/fact from BASEBALL CONTEXT>
-- <reason 2>
-- <reason 3 if useful>
-
-Confidence:
-<Low | Medium | High>
-
-Missing data:
-- <data that would improve the answer, or "None">`
+Style:
+- Be direct and scannable. Prefer short lines, bullets, or a compact list. Avoid long paragraphs.
+- Use ONLY numbers present in the provided data. Never invent scores, stats, odds, injuries, lineups, or Statcast metrics.
+- If the needed data isn't provided, say exactly what's missing in one short line — don't guess.
+- If live data and the model disagree, say so plainly (e.g. "the scoreboard favors KC, but the value is on MIN because the price is inflated").
+- You CANNOT forecast an individual player's future (e.g. "will Ohtani homer tomorrow") — only the team model projects games. If asked, say so and offer the player's recent form instead.
+- Never say "lock", "guaranteed", or "free money". This is analytics, not betting advice.`
 
 export interface ChatRequest {
   message: string
@@ -374,36 +371,88 @@ async function callLlm(system: string, user: string): Promise<string> {
 
 export async function answerMlbQuestion(request: ChatRequest): Promise<ChatResponse> {
   const { message, gameContext } = request
+  const date = getEasternDateString()
+  const intent = detectIntent(message, Boolean(gameContext?.gamePk))
 
-  // 1. Fetch the grounded ML prediction for the game in context.
-  let prediction: Prediction | null = null
-  if (gameContext?.gamePk) {
-    try {
-      prediction = await getPredictionForGame(gameContext.gamePk)
-    } catch (_error) {
-      prediction = null
-    }
+  // Today's scoreboard is cheap (cached) and useful context for most questions.
+  const cards = await getTodayCards(date).catch(() => [])
+
+  // Resolve a game for model/odds/explanation/game-summary intents: the selected
+  // game, else the first team mentioned in the message.
+  let gamePk = gameContext?.gamePk ?? null
+  if (!gamePk && ['model', 'odds', 'explanation', 'game_summary'].includes(intent)) {
+    gamePk = findMatchingCards(message, cards)[0]?.gamePk ?? null
   }
 
-  // 2. Build the structured baseball context (+ data availability inventory).
-  const { text: contextBlock } = buildBaseballContext(prediction, gameContext)
+  // Grounded model prediction — only for intents that actually need it, so a
+  // player/scoreboard question with a game selected stays fast and focused
+  // (and doesn't get pulled toward the game's model output).
+  const wantsPrediction =
+    ['model', 'odds', 'explanation', 'game_summary'].includes(intent) ||
+    (intent === 'general' && Boolean(gameContext?.gamePk))
+  let prediction: Prediction | null = null
+  if (gamePk && wantsPrediction) {
+    prediction = await getPredictionForGame(gamePk).catch(() => null)
+  }
 
-  // 3. Retrieve relevant baseball concepts using an expanded, intent-aware query.
-  const retrieved = retrieve(buildRetrievalQuery(message), 5)
+  const sections: string[] = [`USER QUESTION:\n${message}`, `DETECTED INTENT: ${intent}`]
 
-  // 4. Assemble the prompt.
-  const userPrompt = [
-    `USER QUESTION:\n${message}`,
-    `BASEBALL CONTEXT (the only source of game-specific numbers):\n${contextBlock}`,
-    retrieved.length
-      ? `RETRIEVED BASEBALL CONCEPTS (definitions only, no game numbers):\n${formatRetrieved(retrieved)}`
-      : '',
-    'Answer using the required format. Ground every number in BASEBALL CONTEXT. If you lack the data, say so under Missing data instead of guessing.',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  // Always give the league scoreboard for grounding (unless purely conceptual).
+  sections.push(`TODAY'S GAMES (${date}):\n${buildScoreboardText(cards)}`)
 
-  const answer = await callLlm(SYSTEM_PROMPT, userPrompt)
+  // Mode-specific data.
+  if (intent === 'player') {
+    const lower = message.toLowerCase()
+    const wantsRange = /week|season|month|last \d+|yesterday|lately|recent|this year|past|stretch|\bwar\b|wrc|woba|\bops\b|\bobp\b/.test(lower)
+    let block = ''
+    // "today" / unspecified → live box-score line first.
+    if (!wantsRange) {
+      const lines = await findPlayerLines(message, cards).catch(() => [])
+      if (lines.length) block = `PLAYER STAT LINES (today):\n${lines.join('\n')}`
+    }
+    // Range questions (this week / season / last N games), or no game today.
+    if (!block) {
+      const stats = await getPlayerStats(message, date).catch(() => null)
+      if (stats) block = `PLAYER STATS:\n${stats}`
+    }
+    sections.push(
+      block ||
+        "PLAYER STATS: couldn't find that player or the requested range — the name may not be recognized. Ask the user to clarify."
+    )
+  }
+
+  if (intent === 'game_summary' && gamePk) {
+    sections.push(`GAME SUMMARY:\n${await buildGameSummary(gamePk).catch(() => 'unavailable')}`)
+  }
+
+  if (intent === 'leaders') {
+    sections.push(`STAT LEADERS:\n${await buildLeadersContext(message, date.slice(0, 4)).catch(() => 'unavailable')}`)
+  }
+
+  if (prediction) {
+    sections.push(`GROUNDED MODEL PREDICTION:\n${buildBaseballContext(prediction, gameContext).text}`)
+  }
+
+  // Concept docs help explanation / odds / general questions.
+  const retrieved =
+    ['explanation', 'odds', 'general', 'model'].includes(intent)
+      ? retrieve(buildRetrievalQuery(message), 4)
+      : []
+  if (retrieved.length) {
+    sections.push(`BASEBALL CONCEPTS (definitions only, no game numbers):\n${formatRetrieved(retrieved)}`)
+  }
+
+  if (intent === 'props') {
+    sections.push(
+      'PROPS: player prop projections are not built yet. Tell the user plainly; if a player is named and appeared in PLAYER STAT LINES, you may share their line.'
+    )
+  }
+
+  sections.push(
+    'Answer in the right mode for the intent. Lead with the baseball answer; keep it scannable. Use only the numbers above; if something is missing, say so in one line.'
+  )
+
+  const answer = await callLlm(SYSTEM_PROMPT, sections.filter(Boolean).join('\n\n'))
 
   return {
     answer,

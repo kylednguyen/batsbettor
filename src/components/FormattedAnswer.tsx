@@ -79,14 +79,26 @@ function RichText({ text, keyBase }: { text: string; keyBase: string }) {
 
   text.split('\n').forEach((raw, i) => {
     const line = raw.trim()
-    if (/^[-*•]\s+/.test(line)) {
-      flushPara(`${keyBase}-p${i}`)
-      bullets.push(line.replace(/^[-*•]\s+/, ''))
+    const k = `${keyBase}-${i}`
+    if (/^#{1,4}\s+/.test(line)) {
+      // markdown heading
+      flushPara(`${k}p`)
+      flushBullets(`${k}b`)
+      const label = line.replace(/^#{1,4}\s+/, '').replace(/\*\*/g, '')
+      blocks.push(<p className="ans-subhead" key={`${k}h`}>{label}</p>)
+    } else if (/^([-*_])\1{2,}$/.test(line)) {
+      // horizontal rule
+      flushPara(`${k}p`)
+      flushBullets(`${k}b`)
+      blocks.push(<hr className="ans-hr" key={`${k}hr`} />)
+    } else if (/^[-*•]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
+      flushPara(`${k}p`)
+      bullets.push(line.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, ''))
     } else if (!line) {
-      flushPara(`${keyBase}-p${i}`)
-      flushBullets(`${keyBase}-b${i}`)
+      flushPara(`${k}p`)
+      flushBullets(`${k}b`)
     } else {
-      flushBullets(`${keyBase}-b${i}`)
+      flushBullets(`${k}b`)
       para.push(line)
     }
   })

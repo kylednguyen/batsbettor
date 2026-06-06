@@ -3511,9 +3511,14 @@ button {
 .chatgame-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: #0d0d0d;
   color: #ffffff;
+}
+
+.chatgame-shell--with-preview {
+  grid-template-columns: 260px minmax(0, 1fr) 420px;
 }
 
 .chatgame-sidebar {
@@ -3571,7 +3576,7 @@ button {
   align-items: center;
   gap: 10px;
   width: 100%;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   color: rgba(255, 255, 255, 0.75);
   cursor: pointer;
@@ -3579,19 +3584,21 @@ button {
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
 .sidebar-nav-item:hover,
 .sidebar-game-item:hover,
 .sidebar-chat-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.045);
   color: #fff;
 }
 
+/* Single, consistent active state: subtle red wash + thin border (no side bar). */
 .sidebar-nav-item--active,
 .sidebar-game-item.active {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(196, 30, 58, 0.1);
+  border-color: rgba(196, 30, 58, 0.24);
   color: #ffffff;
 }
 
@@ -3696,9 +3703,12 @@ button {
 }
 
 .sidebar-game-item {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  padding: 8px 10px;
+  min-height: 42px;
 }
 
 .sidebar-game-item__matchup {
@@ -3713,42 +3723,95 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #e5e5e5;
+  color: #e8e8e8;
   font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
 
-.sidebar-game-item__live-row {
+.sidebar-game-item__at {
+  color: rgba(255, 255, 255, 0.32);
+  margin: 0 1px;
+}
+
+.sidebar-game-item__sub {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
   line-height: 1;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.sidebar-game-item__status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-game-item__inning {
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .sidebar-game-item__outs {
-  color: rgba(255, 255, 255, 0.35);
-}
-
-.sidebar-game-item__score {
-  flex: 0 0 auto;
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.4);
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 13px;
 }
 
-.sidebar-game-item.active .sidebar-game-item__score {
-  color: rgba(255, 255, 255, 0.82);
+.sidebar-game-item__sub .mini-diamond {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
 }
+
+/* Live pulse dot */
+.sidebar-game-item__livedot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--red);
+}
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(196, 30, 58, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(196, 30, 58, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(196, 30, 58, 0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-game-item__livedot { animation: live-pulse 2.2s ease-out infinite; }
+}
+
+/* Right column: score (live/final) or start time (upcoming) */
+.sidebar-game-item__meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-game-item__scoreline {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.sidebar-game-item__scoreline .dash { color: rgba(255, 255, 255, 0.28); }
+.sidebar-game-item__scoreline .lead { color: #fff; font-weight: 700; }
+
+.sidebar-game-item__time {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Completed games sit quieter until hovered or selected */
+.sidebar-game-item--final { opacity: 0.66; }
+.sidebar-game-item--final:hover,
+.sidebar-game-item--final.active { opacity: 1; }
+.sidebar-game-item.active .sidebar-game-item__scoreline,
+.sidebar-game-item.active .sidebar-game-item__time { color: #fff; }
 
 /* ── Skeleton ─────────────────────────────────────────── */
 @keyframes skeleton-pulse {
@@ -3865,7 +3928,11 @@ button {
 
 .chatgame-main {
   min-width: 0;
-  padding: 20px 24px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   background: #141414;
 }
 
@@ -4108,11 +4175,9 @@ body,
   background: #151515;
 }
 
-.sidebar-nav-item--active,
-.sidebar-game-item.active,
 .sidebar-chat-item.active {
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: none;
+  background: rgba(196, 30, 58, 0.1);
+  border-color: rgba(196, 30, 58, 0.24);
 }
 
 .game-sidebar__item--active,
@@ -4225,8 +4290,8 @@ body,
 
 /* --- Game side panel --- */
 .game-side {
-  flex: 0 0 410px;
-  max-width: 410px;
+  flex: 0 0 420px;
+  max-width: 420px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -4521,25 +4586,7 @@ body,
 .game-side__bar,
 .chat-main__header { border-color: rgba(255, 255, 255, 0.08); }
 
-/* Clearer—but still subtle—selected state with a brand accent bar */
-.sidebar-game-item.active,
-.sidebar-nav-item--active {
-  background: rgba(196, 30, 58, 0.12);
-  color: #fff;
-  box-shadow: inset 3px 0 0 var(--red);
-}
-.sidebar-game-item.active .sidebar-game-item__score { color: #fff; }
-
-/* Unified hover for sidebar rows (slightly softer than before) */
-.sidebar-nav-item:hover,
-.sidebar-game-item:hover,
-.sidebar-chat-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-}
-
-/* Chat empty-state: balanced vertical rhythm */
-.chat-main__empty { margin-top: 12vh; }
+/* (Sidebar active + hover states are defined once near the base row rules.) */
 .chat-main__empty .quick-prompts-row { gap: 8px; margin-top: 16px; }
 
 /* Smoother skeleton: a soft shimmer sweep instead of an opacity blink */
@@ -4569,4 +4616,464 @@ body,
   .sidebar-see-more,
   .composer-input,
   .send-button { transition: all 0.16s ease; }
+}
+
+/* ===================================================================== */
+/* Layout fixes — game-detail panel responsiveness, chat empty state,     */
+/* sidebar scroll. Keeps the existing dark/red style; prevents clipping.  */
+/* ===================================================================== */
+
+/* --- Right panel: prevent any child from overflowing --- */
+.game-side__scroll { gap: 16px; }
+.game-side__scroll > * { min-width: 0; max-width: 100%; }
+.score-box { max-width: 100%; overflow: hidden; }
+
+/* --- Scoreboard card: fit cleanly inside the panel (no clipping) --- */
+.selected-game-scorebug {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.3fr) auto minmax(0, 1fr);
+  gap: 0.45rem;
+  padding: 0.9rem 0.8rem;
+  max-width: 520px;
+  margin: 0.7rem auto 0;
+  overflow: hidden;
+}
+.selected-game-scorebug__team { min-width: 0; gap: 0.28rem; }
+.selected-game-scorebug__team > span,
+.selected-game-scorebug__team > small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.selected-game-scorebug__logo { width: 30px; height: 30px; }
+.selected-game-scorebug__score { font-size: 1.9rem; }
+.selected-game-scorebug__center { min-width: 0; gap: 0.32rem; }
+.selected-game-scorebug__center p {
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Wide (expanded / game-only) view can breathe a bit more */
+.game-workspace--gameOnly .selected-game-scorebug { max-width: 560px; padding: 1.1rem 1.4rem; gap: 0.9rem; }
+.game-workspace--gameOnly .selected-game-scorebug__logo { width: 42px; height: 42px; }
+.game-workspace--gameOnly .selected-game-scorebug__score { font-size: 2.5rem; }
+
+/* --- Pitcher vs Batter card: clearer hierarchy, no awkward wrap --- */
+.matchup-card { gap: 0.55rem; padding: 0.95rem 0.9rem; }
+.matchup-card__side { min-width: 0; }
+.matchup-card__person { gap: 0.55rem; margin-top: 0.4rem; min-width: 0; }
+.matchup-card .person-headshot { width: 40px; height: 40px; border-radius: 10px; }
+.matchup-card__person > div { min-width: 0; }
+.matchup-card__person h3 {
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.matchup-card__person p { font-size: 0.72rem; margin-top: 0.15rem; }
+.matchup-card__person small { font-size: 0.7rem; margin-top: 0.15rem; }
+.matchup-card__vs {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 0 0.1rem;
+}
+
+/* --- Chat empty state: intentionally centered, not floating high --- */
+.chat-main__stream { display: flex; flex-direction: column; }
+.chat-main__empty {
+  margin: auto;
+  max-width: 560px;
+  padding: 0 8px;
+}
+
+/* --- Sidebar: list/prompts scroll, profile footer stays put --- */
+.chatgame-sidebar__scroll { min-height: 0; }
+.sidebar-account { flex-shrink: 0; }
+
+/* ===================================================================== */
+/* Base diamond — proper baseball layout (2nd top, 3rd left, 1st right)    */
+/* ===================================================================== */
+.base-diamond {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+}
+.base-diamond .base {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.base-diamond .base--second { top: 0; left: 50%; transform: translateX(-50%) rotate(45deg); }
+.base-diamond .base--third  { top: 50%; left: 0; transform: translateY(-50%) rotate(45deg); }
+.base-diamond .base--first  { top: 50%; right: 0; transform: translateY(-50%) rotate(45deg); }
+.base-diamond .base--home   { bottom: 0; left: 50%; transform: translateX(-50%) rotate(45deg); opacity: 0.4; }
+.base-diamond .base--occupied {
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 5px rgba(196, 30, 58, 0.5);
+}
+
+/* Scorebug: slightly larger and readable */
+.selected-game-scorebug__center .base-diamond { width: 34px; height: 34px; }
+.selected-game-scorebug__center .base-diamond .base { width: 9px; height: 9px; }
+
+/* Sidebar game row: compact (home hidden to stay minimal) */
+.sidebar-game-item__sub .base-diamond { width: 15px; height: 15px; }
+.sidebar-game-item__sub .base-diamond .base { width: 5px; height: 5px; border-radius: 1.5px; }
+.sidebar-game-item__sub .base-diamond .base--home { display: none; }
+
+/* ===================================================================== */
+/* Model cards — Most likely / Best value / Why                           */
+/* ===================================================================== */
+.insight-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.insight-card__headline {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fff;
+  margin: 4px 0 12px;
+}
+.value-status {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.value-status--playable { background: rgba(52, 199, 89, 0.16); color: #4ade80; border: 1px solid rgba(52, 199, 89, 0.3); }
+.value-status--lean { background: rgba(255, 204, 0, 0.14); color: #f5c542; border: 1px solid rgba(255, 204, 0, 0.28); }
+.value-status--pass { background: rgba(255, 255, 255, 0.06); color: #9aa3ad; border: 1px solid rgba(255, 255, 255, 0.12); }
+.edge-pos { color: #4ade80; }
+.why-headline {
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  margin: 4px 0 12px;
+}
+.why-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.why-list li { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+.why-list li::marker { color: rgba(255, 255, 255, 0.32); }
+
+/* ===================================================================== */
+/* Stable ChatGPT-style workspace: centered chat + attached preview panel */
+/* ===================================================================== */
+
+/* --- Center chat workspace --- */
+.main-chat-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.main-chat-header__title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.main-chat-header__context {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.main-chat-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+}
+.main-chat-scroll .chat-stream {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.main-chat-empty {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+}
+.main-chat-empty-inner {
+  width: min(680px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.main-chat-empty__title {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.main-chat-empty__sub {
+  margin: 0;
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.prompt-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.prompt-card {
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.12s ease;
+}
+.prompt-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.chat-composer-shell {
+  flex: 0 0 auto;
+  padding: 14px 24px 22px;
+  border-top: 1px solid var(--line);
+  background: #141414;
+}
+.chat-composer-shell .composer {
+  width: min(820px, 100%);
+  margin: 0 auto;
+}
+
+/* --- Right preview panel (attached, not floating) --- */
+.game-preview-panel {
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: #161618;
+}
+.game-preview-header {
+  flex: 0 0 auto;
+  padding: 14px 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.game-preview-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.game-preview-header__title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-preview-tabs {
+  display: flex;
+  gap: 4px;
+}
+.game-preview-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 10px 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+.game-preview-tab:hover { color: var(--text); }
+.game-preview-tab--active {
+  color: var(--text);
+  border-bottom-color: var(--red);
+}
+
+.game-preview-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.game-preview-scroll > * { min-width: 0; max-width: 100%; }
+
+.preview-empty {
+  padding: 8px 4px;
+}
+.preview-empty__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 6px;
+}
+.preview-empty__text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* --- Mobile: stack the columns, panels size to content --- */
+@media (max-width: 820px) {
+  .chatgame-shell,
+  .chatgame-shell--with-preview {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+  .chatgame-main {
+    height: auto;
+    min-height: 70vh;
+  }
+  .main-chat-scroll { max-height: none; }
+  .game-preview-panel {
+    height: auto;
+    max-height: 80vh;
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* ===================================================================== */
+/* Game preview: single-section views + compact model takeaway           */
+/* ===================================================================== */
+
+/* Tabs scroll horizontally if the 5 labels get tight */
+.game-preview-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.game-preview-tabs::-webkit-scrollbar { display: none; }
+.game-preview-tab { padding: 8px 9px 10px; }
+
+/* Single-section view wrapper (even spacing, no extra card chrome) */
+.game-panel-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.game-panel-view .selected-game-scorebug { margin-top: 0; }
+.game-panel-view .detail-section { margin-top: 0; }
+
+.preview-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  padding: 10px 4px;
+  margin: 0;
+}
+.preview-note strong { color: var(--text); }
+
+/* Compact model takeaway (Overview tab) */
+.model-takeaway__headline {
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  margin: 4px 0 12px;
+}
+.model-takeaway__stats {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.model-takeaway__stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.model-takeaway__stats span {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.model-takeaway__stats strong {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+}
+.model-takeaway__btn {
+  appearance: none;
+  width: 100%;
+  border: 1px solid rgba(196, 30, 58, 0.3);
+  background: rgba(196, 30, 58, 0.1);
+  color: #fff;
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+}
+.model-takeaway__btn:hover {
+  background: rgba(196, 30, 58, 0.17);
+  border-color: rgba(196, 30, 58, 0.46);
+}
+.model-takeaway__btn:active { transform: scale(0.99); }
+
+/* Anchored scoreboard inside the preview header (visible across all tabs) */
+.game-preview-header .selected-game-scorebug {
+  max-width: none;
+  margin: 0 0 12px;
+}
+
+/* Markdown subheadings / dividers in assistant answers */
+.ans-subhead {
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.9rem;
+  margin: 8px 0 2px;
+}
+.ans-hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 8px 0;
 }
