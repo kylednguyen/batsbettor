@@ -163,6 +163,47 @@ Retrain trigger: weekly cron, or manually after every N new completed games.
 
 ---
 
+## Running Locally (Runbook)
+
+Full setup instructions live in `README.md`. Quick reference:
+
+```bash
+npm install && cp .env.example .env   # fill in keys
+npm run dev:server                    # backend :8787 — tick loop + ingestion auto-start
+npm run dev                           # frontend :5173
+```
+
+One-time Supabase setup: create a free project, run `server/db/schema.sql` in the SQL editor, put `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` in `.env` and in GitHub repo secrets (for the training workflow).
+
+Sanity checks:
+
+```bash
+curl localhost:8787/api/model             # devig-v0 until first training run
+curl localhost:8787/api/predict/<gamePk>  # prediction (requires ODDS_API_KEY)
+```
+
+Train manually once ≥50 labeled games exist:
+
+```bash
+pip install -r ml/requirements.txt
+SUPABASE_URL=... SUPABASE_SERVICE_KEY=... python ml/train_win_prob.py
+# then restart or wait ≤5 min — /api/model should report lr-<date>
+```
+
+Or trigger the "Train win probability model" workflow in the GitHub Actions tab.
+
+Troubleshooting:
+
+```text
+"Supabase not configured" in server logs   → env vars missing; ingestion no-ops
+No odds / no predictions                   → ODDS_API_KEY missing or quota hit
+"artifact features do not match" crash     → feature builder changed since last
+                                             train; delete/retrain the artifact
+Training prints "Skipping retrain"         → fewer than 50 labeled games so far
+```
+
+---
+
 ## Testing & Comparison
 
 ```text
