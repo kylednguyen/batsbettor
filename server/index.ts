@@ -13,6 +13,7 @@ import {
   getMlbOddsByDate,
   getScheduleByDate,
 } from './mlbStatsService.js'
+import { predictGame, getActiveModelVersion } from './model/predict.js'
 
 const app = express()
 const port = Number(process.env.PORT || 8787)
@@ -105,6 +106,32 @@ app.get('/api/mlb/odds', async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(502).json({ error: formatError(error) })
   }
+})
+
+app.get('/api/predict/:gamePk', async (req: Request, res: Response) => {
+  try {
+    const gamePk = Number(req.params.gamePk)
+    if (!Number.isFinite(gamePk)) {
+      return res.status(400).json({ error: 'Invalid gamePk' })
+    }
+    const date = (req.query.date as string) || getEasternDateString()
+    const payload = await getLiveScoreCardsByDate({ date })
+    const card = payload.cards.find((c) => c.gamePk === gamePk)
+    if (!card) {
+      return res.status(404).json({ error: `Game ${gamePk} not found for ${date}` })
+    }
+    const prediction = predictGame(card)
+    if (!prediction) {
+      return res.json({ gamePk, matchup: card.matchup, prediction: null, reason: 'No odds available yet' })
+    }
+    return res.json({ gamePk, matchup: card.matchup, prediction })
+  } catch (error) {
+    return res.status(502).json({ error: formatError(error) })
+  }
+})
+
+app.get('/api/model', (_req: Request, res: Response) => {
+  res.json({ modelVersion: getActiveModelVersion() })
 })
 
 app.post('/api/chat', async (req: Request, res: Response) => {

@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { ScoreCard } from '../src/types.js'
+import { predictGame } from './model/predict.js'
+import type { ScoreCard as ServerScoreCard } from './mlbStatsService.js'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -26,9 +28,18 @@ export interface ChatResponse {
 export async function handleChat(request: ChatRequest): Promise<ChatResponse> {
   const { message, gameContext } = request
 
-  const contextBlock = gameContext
-    ? `\n\nCurrent game context:\n${JSON.stringify(gameContext, null, 2)}`
-    : ''
+  let contextBlock = ''
+  if (gameContext) {
+    contextBlock = `\n\nCurrent game context:\n${JSON.stringify(gameContext, null, 2)}`
+    try {
+      const prediction = predictGame(gameContext as unknown as ServerScoreCard)
+      if (prediction) {
+        contextBlock += `\n\nModel prediction (version ${prediction.modelVersion}):\n${JSON.stringify(prediction, null, 2)}\nNote: homeProbabilityEdge is the model probability minus the no-vig book probability. Probabilities are decimals (0.62 = 62%).`
+      }
+    } catch (_error) {
+      // Prediction is best-effort context; chat should still answer without it.
+    }
+  }
 
   const userContent = `${message}${contextBlock}`
 
