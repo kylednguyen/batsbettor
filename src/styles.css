@@ -4292,7 +4292,7 @@ body,
 /* Mount animations on the high-traffic surfaces */
 .insight-card,
 .stat-card,
-.chat-message {
+.message-card {
   animation: motion-rise var(--motion-base) var(--ease-out) both;
 }
 
@@ -4363,5 +4363,169 @@ body,
   .primary-button:hover,
   .send-button:hover {
     transform: none;
+  }
+}
+
+/* ============================================================
+   CHATBOT REFRESH  (Dugout Red — docs/design-spec.md §5 Chat)
+   Late in the cascade on purpose: overrides legacy flat-theme rules.
+   ============================================================ */
+
+.chat-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* User messages: right-aligned brand bubble */
+.message-card.user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: min(72%, 560px);
+  padding: 0.7rem 1rem;
+  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: 6px;
+  box-shadow: 0 6px 20px rgba(192, 87, 70, 0.22);
+}
+
+.message-card.user .message-body {
+  color: #fff;
+}
+
+/* Assistant messages: open, full-width, anchored by a tag pill */
+.message-card.assistant {
+  align-self: stretch;
+  max-width: 100%;
+  padding: 0.25rem 0 0.25rem 0.9rem;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid var(--accent-border);
+  border-radius: 0;
+}
+
+.message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+
+.message-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent-surface);
+  color: var(--accent-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.message-title {
+  color: var(--faint);
+  font-size: 0.78rem;
+}
+
+.message-body {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.97rem;
+  line-height: 1.6;
+}
+
+/* Composer: panel surface, brand focus glow */
+.composer,
+.composer--minimal {
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.composer--focused {
+  border-color: var(--brand);
+  box-shadow:
+    0 0 0 3px rgba(192, 87, 70, 0.25),
+    0 14px 36px rgba(0, 0, 0, 0.4);
+}
+
+.composer-input {
+  color: var(--text);
+}
+
+.composer-input::placeholder {
+  color: var(--faint);
+}
+
+.composer-floating-label {
+  color: var(--accent-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* Send button: brand gradient with tactile press */
+.send-button {
+  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  box-shadow: 0 4px 14px rgba(192, 87, 70, 0.35);
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
+}
+
+.send-button:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 6px 18px rgba(192, 87, 70, 0.45);
+}
+
+.send-button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.send-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Typing indicator: brand-tinted dots */
+.typing-indicator span {
+  background: var(--accent-text);
+}
+
+/* Quick prompt chips: pill-shaped, brand hover */
+.quick-prompt-chip {
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.quick-prompt-chip:hover {
+  background: var(--accent-surface);
+  border-color: var(--accent-border);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+/* Floating chat panel inherits the open composer style */
+.floating-chat-panel .composer {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .message-card.user {
+    max-width: 86%;
   }
 }
