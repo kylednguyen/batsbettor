@@ -285,12 +285,45 @@ The market is a strong baseline — large disagreements with the no-vig probabil
 ```
 
 ### Phase 4 — Richer features, then gradient boosting via ONNX
+
+Data still left out of the win probability models, and where to pull it.
+All of it comes from the free MLB StatsAPI — add to the feature builders,
+backfill/accumulate, retrain (the artifact tripwire forces the retrain).
+
 ```text
-[ ] Add features to buildFeatureVector.ts (starting pitcher quality,
-    bullpen rest, recent team form, park factor) — accumulate, retrain
+STARTING PITCHER QUALITY (pregame + live models)
+[ ] Probable starters      GET /api/v1/schedule?hydrate=probablePitcher
+[ ] Season pitching stats  GET /api/v1/people/{id}/stats?stats=season&group=pitching
+    → ERA, WHIP, K/9, BB/9, innings per start
+[ ] Recent form            stats=gameLog → last 3 starts ERA / pitch counts
+
+BULLPEN FEATURES (the big omission)
+[ ] Bullpen season stats   GET /api/v1/teams/{id}/stats?group=pitching
+    minus starters → bullpen ERA, WHIP, K%
+[ ] Bullpen fatigue        boxscores from the last 3 days
+    (GET /api/v1.1/game/{pk}/feed/live per recent game) → relief innings
+    thrown per team over 1/3/5 days → fatigue score
+[ ] Live bullpen state     current feed boxscore → which relievers already
+    used tonight; starter pitch count (liveData.boxscore pitchersFaced/pitches)
+
+TEAM RECENT FORM
+[ ] Last 10/30 game runs scored & allowed
+    GET /api/v1/schedule?teamId=...&startDate=...&endDate=... finals
+
+GAME CONTEXT
+[ ] Park factor            static lookup table by venue (publicly published)
+[ ] Home/away splits       team stats endpoint with sitCodes
+[ ] Rest/travel            derive from schedule (games on consecutive days)
+
+MODEL UPGRADE PATH
 [ ] Fit GradientBoosting/XGBoost in Python, export to ONNX with preprocessing
 [ ] Score with onnxruntime-web in Node (same predictions contract)
 ```
+
+Note the leakage rule applies to every new feature: pregame features must be
+snapshotted before first pitch; live features must reflect only the state at
+that at-bat (e.g. "relievers used so far tonight" is fine, "total relievers
+used in the game" is not).
 
 ### Phase 5 — Python inference service (only at real scale)
 ```text

@@ -14,6 +14,7 @@ import {
   getScheduleByDate,
 } from './mlbStatsService.js'
 import { predictGame, getActiveModelVersion } from './model/predict.js'
+import { formatAmericanOdds, translateMoneyline, translateProbability } from './utils/oddsMath.js'
 
 const app = express()
 const port = Number(process.env.PORT || 8787)
@@ -125,6 +126,85 @@ app.get('/api/predict/:gamePk', async (req: Request, res: Response) => {
       return res.json({ gamePk, matchup: card.matchup, prediction: null, reason: 'No odds available yet' })
     }
     return res.json({ gamePk, matchup: card.matchup, prediction })
+  } catch (error) {
+    return res.status(502).json({ error: formatError(error) })
+  }
+})
+
+// Translate between win probabilities and book-style odds.
+//   ?prob=0.62                 → fair American odds for that win probability
+//   ?home=-150&away=130        → implied + no-vig probabilities, book hold
+//   ?gamePk=123&date=...       → both directions for that game's model prediction
+app.get('/api/odds/translate', async (req: Request, res: Response) => {
+  try {
+    const { prob, home, away, gamePk } = req.query
+
+    if (prob !== undefined) {
+      const probability = Number(prob)
+      if (!Number.isFinite(probability) || probability <= 0 || probability >= 1) {
+        return res.status(400).json({ error: 'prob must be a number strictly between 0 and 1' })
+      }
+      return res.json({ translation: translateProbability(probability) })
+    }
+
+    if (home !== undefined && away !== undefined) {
+      const homeOdds = Number(home)
+      const awayOdds = Number(away)
+      if (!Number.isFinite(homeOdds) || !Number.isFinite(awayOdds)) {
+        return res.status(400).json({ error: 'home and away must be American odds, e.g. home=-150&away=130' })
+      }
+      const t = translateMoneyline(homeOdds, awayOdds)
+      return res.json({
+        home: { american: homeOdds, display: formatAmericanOdds(homeOdds), impliedProb: t.homeRawImplied, noVigProb: t.homeNoVig },
+        away: { american: awayOdds, display: formatAmericanOdds(awayOdds), impliedProb: t.awayRawImplied, noVigProb: t.awayNoVig },
+        bookHoldPercent: t.bookHold * 100,
+      })
+    }
+
+    if (gamePk !== undefined) {
+      const pk = Number(gamePk)
+      if (!Number.isFinite(pk)) {
+        return res.status(400).json({ error: 'Invalid gamePk' })
+      }
+      const date = (req.query.date as string) || getEasternDateString()
+      const payload = await getLiveScoreCardsByDate({ date })
+      const card = payload.cards.find((c) => c.gamePk === pk)
+      if (!card) {
+        return res.status(404).json({ error: `Game ${pk} not found for ${date}` })
+      }
+      const prediction = predictGame(card)
+      if (!prediction) {
+        return res.json({ gamePk: pk, matchup: card.matchup, translation: null, reason: 'No prediction available yet' })
+      }
+      const book =
+        card.homeMoneyline !== null && card.awayMoneyline !== null
+          ? translateMoneyline(card.homeMoneyline, card.awayMoneyline)
+          : null
+      return res.json({
+        gamePk: pk,
+        matchup: card.matchup,
+        modelVersion: prediction.modelVersion,
+        home: {
+          team: card.homeTeam,
+          modelWinProbability: prediction.homeWinProbability,
+          fairOdds: translateProbability(prediction.homeWinProbability),
+          bookOdds: card.homeMoneylineDisplay,
+          bookNoVigProb: book?.homeNoVig ?? null,
+          edge: prediction.homeProbabilityEdge,
+        },
+        away: {
+          team: card.awayTeam,
+          modelWinProbability: prediction.awayWinProbability,
+          fairOdds: translateProbability(prediction.awayWinProbability),
+          bookOdds: card.awayMoneylineDisplay,
+          bookNoVigProb: book?.awayNoVig ?? null,
+          edge: prediction.homeProbabilityEdge !== null ? -prediction.homeProbabilityEdge : null,
+        },
+        bookHoldPercent: book ? book.bookHold * 100 : null,
+      })
+    }
+
+    return res.status(400).json({ error: 'Provide ?prob=, ?home=&away=, or ?gamePk=' })
   } catch (error) {
     return res.status(502).json({ error: formatError(error) })
   }
