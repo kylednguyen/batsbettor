@@ -131,7 +131,7 @@ app.get('/api/predict/:gamePk', async (req: Request, res: Response) => {
 })
 
 app.get('/api/model', (_req: Request, res: Response) => {
-  res.json({ modelVersion: getActiveModelVersion() })
+  res.json({ models: getActiveModelVersion() })
 })
 
 app.post('/api/chat', async (req: Request, res: Response) => {

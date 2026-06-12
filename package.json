@@ -4,11 +4,13 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev:server": "tsx server/index.ts",
+    "dev:server": "tsx --env-file-if-exists=.env server/index.ts",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "ingest:mlb": "tsx scripts/fetch-mlb-data.ts"
+    "ingest:mlb": "tsx scripts/fetch-mlb-data.ts",
+    "backfill:live": "tsx --env-file-if-exists=.env scripts/backfill-live-training.ts",
+    "train": "python3 ml/train_win_prob.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

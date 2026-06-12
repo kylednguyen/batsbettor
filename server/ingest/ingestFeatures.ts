@@ -1,6 +1,7 @@
 import { getSupabase } from '../db/supabase.js'
 import type { ScoreCard } from '../mlbStatsService.js'
 import { buildFeatureVector } from '../features/buildFeatureVector.js'
+import { buildLiveFeatureVector, liveStateFromScoreCard } from '../features/buildLiveFeatureVector.js'
 import { predictGame } from '../model/predict.js'
 
 // Games that already have their pregame snapshot (checked against the DB on
@@ -46,11 +47,44 @@ async function writePrediction(card: ScoreCard, snapshotId: number): Promise<voi
   if (error) console.error('prediction insert failed:', error.message)
 }
 
+// Last written live state per game, so we only persist a snapshot when the
+// game state actually changes (new baserunner, out, run, inning).
+const lastLiveStateHashByGamePk = new Map<number, string>()
+
+async function ingestLiveSnapshot(card: ScoreCard): Promise<void> {
+  const supabase = getSupabase()
+  if (!supabase || card.gamePk === null) return
+
+  const state = liveStateFromScoreCard(card)
+  if (!state) return
+
+  const hash = JSON.stringify(state)
+  if (lastLiveStateHashByGamePk.get(card.gamePk) === hash) return
+
+  const vector = buildLiveFeatureVector(state)
+  const { error } = await supabase.from('feature_snapshots').insert({
+    game_pk: card.gamePk,
+    is_pregame: false,
+    feature_names: vector.featureNames,
+    feature_values: vector.values,
+    features: vector.features,
+  })
+  if (error) {
+    console.error(`live snapshot insert failed for ${card.gamePk}:`, error.message)
+    return
+  }
+  lastLiveStateHashByGamePk.set(card.gamePk, hash)
+}
+
 export async function ingestFeatures(cards: ScoreCard[]): Promise<void> {
   const supabase = getSupabase()
   if (!supabase) return
 
   for (const card of cards) {
+    if (card.statusCode === 'L') {
+      await ingestLiveSnapshot(card)
+      continue
+    }
     // Pregame only: once the game is live the outcome is leaking into state.
     if (card.gamePk === null || card.statusCode !== 'P') continue
     if (snapshotWritten.has(card.gamePk)) continue

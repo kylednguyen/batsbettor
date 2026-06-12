@@ -57,9 +57,19 @@ curl localhost:8787/api/predict/<gamePk>  # prediction for one game (needs odds)
 
 With Supabase configured, watch rows appear in the dashboard table editor as the tick loop runs.
 
-### 4. Train the model (after data accumulates)
+### 4. Backfill live-state training data (instant)
 
-The server needs to run for ~2–4 weeks so labeled games accumulate (the training script skips below 50 labeled games). Then either:
+The live win probability model trains on per-at-bat game states from **past results**, reconstructed from MLB's archived play-by-play feeds — so you don't have to wait for data to accumulate:
+
+```bash
+npm run backfill:live -- --start 2026-04-01 --end 2026-06-10
+```
+
+This writes labeled `games` rows and ~75 live-state feature rows per game into Supabase, built by the same TypeScript feature builder used at inference time. Games already backfilled are skipped, so it's safe to re-run.
+
+### 5. Train the models
+
+Two artifacts are fit in one run: the **pregame** model (market + record features, needs accumulated pregame snapshots) and the **live** model (game-state features from the backfill + live ingestion). Each needs ≥50 labeled games; the backfill satisfies that for the live model immediately. Then either:
 
 **Locally:**
 
@@ -68,7 +78,7 @@ pip install -r ml/requirements.txt
 SUPABASE_URL=... SUPABASE_SERVICE_KEY=... python ml/train_win_prob.py
 ```
 
-**Or via GitHub Actions:** add `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` as repo secrets, then run the "Train win probability model" workflow from the Actions tab (it also runs weekly on a cron). The workflow commits `models/win_prob_latest.json`; the server picks it up within 5 minutes and `GET /api/model` reports the new `lr-*` version.
+**Or via GitHub Actions:** add `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` as repo secrets, then run the "Train win probability model" workflow from the Actions tab (it also runs weekly on a cron). The workflow commits the model artifacts; the server picks them up within 5 minutes and `GET /api/model` reports the new `lr-*` (pregame) and `lr-live-*` (live) versions. During live games, inference automatically uses the live-state model.
 
 ## Status
 

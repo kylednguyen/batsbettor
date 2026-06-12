@@ -182,12 +182,21 @@ curl localhost:8787/api/model             # devig-v0 until first training run
 curl localhost:8787/api/predict/<gamePk>  # prediction (requires ODDS_API_KEY)
 ```
 
-Train manually once ≥50 labeled games exist:
+Backfill live-state training data from past results (no waiting for accumulation):
+
+```bash
+npm run backfill:live -- --start 2026-04-01 --end 2026-06-10
+# reconstructs per-at-bat states from archived play-by-play; writes labeled
+# games + is_pregame=false feature rows (~75 per game)
+```
+
+Train manually once ≥50 labeled games exist (backfill satisfies this immediately):
 
 ```bash
 pip install -r ml/requirements.txt
-SUPABASE_URL=... SUPABASE_SERVICE_KEY=... python ml/train_win_prob.py
-# then restart or wait ≤5 min — /api/model should report lr-<date>
+npm run train   # needs SUPABASE_* in the environment
+# fits BOTH artifacts: win_prob_latest.json (pregame) and
+# win_prob_live_latest.json (live) — wait ≤5 min, /api/model shows versions
 ```
 
 Or trigger the "Train win probability model" workflow in the GitHub Actions tab.
@@ -247,6 +256,24 @@ The market is a strong baseline — large disagreements with the no-vig probabil
 [x] Node artifact loader with skew tripwire + 5-min refresh
 [ ] Add SUPABASE_* secrets to GitHub repo settings
 [ ] First successful training run; confirm Node serves lr-* version
+```
+
+### Phase 2.5 — Live-state model trained on past results ✅ (code) / ⏳ (run)
+```text
+[x] Live feature builder (buildLiveFeatureVector.ts): inning, half, outs,
+    run diff, total runs, base runners, team win pcts — no odds, so it
+    trains purely from historical results
+[x] Per-at-bat state reconstruction from archived play-by-play feeds
+    (reconstructLiveStates.ts)
+[x] Backfill script: npm run backfill:live -- --start ... --end ...
+[x] Live snapshot ingestion during games (state-change detection)
+[x] Training fits a second artifact (win_prob_live_latest.json) with a
+    BY-GAME time split so one game's states never straddle train/validation
+[x] Inference routes live games to the live model; falls back to
+    pregame/devig when no live artifact exists
+[ ] Run the backfill over the season to date (gives training data instantly,
+    no waiting for accumulation)
+[ ] Train: npm run train — confirm /api/model reports lr-live-<date>
 ```
 
 ### Phase 3 — Backtesting
