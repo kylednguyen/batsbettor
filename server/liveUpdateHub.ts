@@ -1,6 +1,9 @@
 import type { Server as SocketIOServer, Socket } from 'socket.io'
 import { getEasternDateString } from './dateUtils.js'
 import { buildFeaturedGameSummary, getGameFeed, getLiveScoreCardsByDate, type ScoreCard, type ScoreBox } from './mlbStatsService.js'
+import { ingestGames } from './ingest/ingestGames.js'
+import { ingestOdds } from './ingest/ingestOdds.js'
+import { ingestFeatures } from './ingest/ingestFeatures.js'
 
 const SCOREBOARD_INTERVAL_MS = 15_000
 const FINAL_GAME_INTERVAL_MS = 180_000
@@ -151,7 +154,17 @@ export function createLiveUpdateHub({ io }: { io: SocketIOServer }) {
     isTicking = true
 
     try {
-      await fetchScoreboard()
+      const scoreboard = await fetchScoreboard()
+
+      // Persist snapshots for model training. Failures here must never break
+      // live updates, so this block swallows its own errors.
+      try {
+        await ingestGames(scoreboard.cards, scoreboard.date)
+        await Promise.all([ingestOdds(scoreboard.cards), ingestFeatures(scoreboard.cards)])
+      } catch (error) {
+        console.error('Ingestion failed:', (error as Error).message)
+      }
+
       const subscribedGamePks = getSubscribedGamePks()
       await Promise.all(subscribedGamePks.map((gamePk) => fetchGameUpdate(gamePk)))
     } catch (error) {

@@ -23,6 +23,8 @@ import {
   buildLeadersContext,
 } from './mlbContext.js'
 import { getEasternDateString } from '../dateUtils.js'
+import { getLiveScoreCardsByDate } from '../mlbStatsService.js'
+import { predictGame as predictWithTrainedModel } from '../model/predict.js'
 import type { ScoreCard } from '../../src/types.js'
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
@@ -431,6 +433,27 @@ export async function answerMlbQuestion(request: ChatRequest): Promise<ChatRespo
 
   if (prediction) {
     sections.push(`GROUNDED MODEL PREDICTION:\n${buildBaseballContext(prediction, gameContext).text}`)
+  }
+
+  // Trained-model probabilities (model/predict.ts artifact), when available —
+  // best-effort context alongside the analytic prediction above.
+  if (gamePk && wantsPrediction) {
+    try {
+      const payload = await getLiveScoreCardsByDate({ date })
+      const card = payload.cards.find((c) => c.gamePk === gamePk)
+      const trained = card ? predictWithTrainedModel(card) : null
+      if (trained) {
+        sections.push(
+          `TRAINED MODEL (version ${trained.modelVersion}):\n` +
+            `home win probability ${(trained.homeWinProbability * 100).toFixed(1)}%, ` +
+            `fair home moneyline ${trained.fairHomeMoneyline}, ` +
+            `book no-vig home probability ${trained.homeNoVigProbability !== null ? (trained.homeNoVigProbability * 100).toFixed(1) + '%' : 'n/a'}, ` +
+            `model-vs-book edge ${trained.homeProbabilityEdge !== null ? (trained.homeProbabilityEdge * 100).toFixed(1) + ' pts' : 'n/a'}`
+        )
+      }
+    } catch (_error) {
+      // Trained model is optional context; never block the answer on it.
+    }
   }
 
   // Concept docs help explanation / odds / general questions.

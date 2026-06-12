@@ -4,16 +4,19 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev:server": "tsx server/index.ts",
+    "dev:server": "tsx --env-file-if-exists=.env server/index.ts",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "ingest:mlb": "tsx scripts/fetch-mlb-data.ts",
     "train:winprob": "tsx scripts/train_win_prob.ts",
-    "train:xgb": "python3 ml/train_xgb.py"
+    "train:xgb": "python3 ml/train_xgb.py",
+    "backfill:live": "tsx --env-file-if-exists=.env scripts/backfill-live-training.ts",
+    "train": "python3 ml/train_win_prob.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
+    "@supabase/supabase-js": "^2.108.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

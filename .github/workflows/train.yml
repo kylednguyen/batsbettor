@@ -1,0 +1,42 @@
+name: Train win probability model
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 10:00 UTC (after the weekend slate is final)
+    - cron: '0 10 * * 1'
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r ml/requirements.txt
+
+      - name: Train model
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python ml/train_win_prob.py
+
+      - name: Commit artifact
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/
+          if git diff --cached --quiet; then
+            echo "No model changes to commit"
+          else
+            git commit -m "Retrain win probability model ($(date -u +%F))"
+            git push
+          fi

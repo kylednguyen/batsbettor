@@ -53,3 +53,43 @@ export function translateMoneyline(
     bookHold: homeRaw + awayRaw - 1,
   }
 }
+
+export const formatAmericanOdds = formatAmerican
+
+// Translate a model win probability into book-style odds: the fair line
+// (no hold) plus what a book would post at typical hold levels.
+export interface ProbabilityTranslation {
+  probability: number
+  percentDisplay: string
+  fairAmerican: number
+  fairAmericanDisplay: string
+  withTypicalHold: {
+    holdPercent: number
+    american: number
+    americanDisplay: string
+  }
+}
+
+const TYPICAL_BOOK_HOLD = 0.045
+
+export function translateProbability(prob: number): ProbabilityTranslation {
+  if (prob <= 0 || prob >= 1) {
+    throw new Error('Probability must be strictly between 0 and 1')
+  }
+  const fairAmerican = impliedProbToAmerican(prob)
+  // Books split the hold across both sides; half lands on this outcome.
+  const juiced = Math.min(prob + TYPICAL_BOOK_HOLD / 2, 0.999)
+  const juicedAmerican = impliedProbToAmerican(juiced)
+
+  return {
+    probability: prob,
+    percentDisplay: `${(prob * 100).toFixed(1)}%`,
+    fairAmerican,
+    fairAmericanDisplay: formatAmericanOdds(fairAmerican),
+    withTypicalHold: {
+      holdPercent: TYPICAL_BOOK_HOLD * 100,
+      american: juicedAmerican,
+      americanDisplay: formatAmericanOdds(juicedAmerican),
+    },
+  }
+}

@@ -2,27 +2,56 @@
 
 :root {
   font-family: 'IBM Plex Sans', sans-serif;
-  color: #f5f7fb;
-  background: #0c0c0c;
-  --bg: #0c0c0c;
-  --panel: #0c0c0c;
-  --panel-strong: #161616;
+  color: #f4f6fa;
+  background: #0f1115;
+
+  /* Surfaces — layered for depth ("Dugout Red" spec, docs/design-spec.md) */
+  --bg: #0f1115;
+  --panel: #161a22;
+  --panel-strong: #1d2430;
   --line: rgba(255, 255, 255, 0.07);
-  --text: #f5f7fb;
-  --muted: #b9c0c8;
-  --red: rgb(196, 30, 58);
-  --accent-text: rgb(196, 30, 58);
-  --accent-surface: rgba(196, 30, 58, 0.18);
-  --accent-border: rgba(196, 30, 58, 0.46);
-  --accent-glow: rgba(196, 30, 58, 0.2);
-  --blue: rgb(196, 30, 58);
-  --red-soft: rgba(196, 30, 58, 0.18);
-  --blue-soft: rgba(196, 30, 58, 0.1);
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
-  /* Consistent rounded scale: controls / cards / panels */
+
+  /* Text */
+  --text: #f4f6fa;
+  --muted: #b8c0cc;
+  --faint: #7b8492;
+
+  /* Brand (Dugout Red) */
+  --brand: #c05746;
+  --brand-deep: #a44536;
+  --brand-darkest: #7e3125;
+  --red: #c05746;
+  --accent-text: #d2705f;
+  --accent-surface: rgba(192, 87, 70, 0.16);
+  --accent-border: rgba(192, 87, 70, 0.46);
+  --accent-glow: rgba(192, 87, 70, 0.22);
+  --blue: #c05746;
+  --red-soft: rgba(192, 87, 70, 0.16);
+  --blue-soft: rgba(192, 87, 70, 0.1);
+
+  /* Semantic data signals — green = good for the bettor */
+  --positive: #2ec27e;
+  --positive-soft: rgba(46, 194, 126, 0.16);
+  --highlight: #f5b942;
+  --highlight-soft: rgba(245, 185, 66, 0.16);
+  --warning: #e5484d;
+  --warning-soft: rgba(229, 72, 77, 0.16);
+  --danger: #dc2626;
+
+  /* Elevation */
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  --shadow-lift: 0 22px 60px rgba(0, 0, 0, 0.55);
+  --glow-brand: 0 0 0 1px var(--brand), 0 8px 28px rgba(192, 87, 70, 0.28);
   --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* Motion */
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --motion-slow: 420ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 * {
@@ -4867,6 +4896,328 @@ body,
   transform: translateY(-1px);
 }
 
+/* ============================================================
+   MOTION LAYER  (see docs/design-spec.md §4)
+   ============================================================ */
+
+@keyframes motion-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes motion-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pulse-live {
+  0%, 100% { box-shadow: 0 0 0 0 var(--warning-soft); opacity: 1; }
+  50%      { box-shadow: 0 0 0 6px rgba(229, 72, 77, 0); opacity: 0.78; }
+}
+
+@keyframes value-flash-up {
+  0%   { background: var(--positive-soft); color: var(--positive); }
+  100% { background: transparent; }
+}
+
+@keyframes value-flash-down {
+  0%   { background: var(--warning-soft); color: var(--warning); }
+  100% { background: transparent; }
+}
+
+/* Entrance utilities */
+.motion-rise { animation: motion-rise var(--motion-base) var(--ease-out) both; }
+.motion-fade { animation: motion-fade var(--motion-base) var(--ease-out) both; }
+
+/* Staggered list children */
+.motion-stagger > * { animation: motion-rise var(--motion-base) var(--ease-out) both; }
+.motion-stagger > *:nth-child(1) { animation-delay: 20ms; }
+.motion-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.motion-stagger > *:nth-child(3) { animation-delay: 100ms; }
+.motion-stagger > *:nth-child(4) { animation-delay: 140ms; }
+.motion-stagger > *:nth-child(5) { animation-delay: 180ms; }
+.motion-stagger > *:nth-child(n + 6) { animation-delay: 220ms; }
+
+/* Live numbers flash green/red when they change */
+.value-flash-up   { animation: value-flash-up var(--motion-slow) var(--ease-out); border-radius: var(--radius-sm); }
+.value-flash-down { animation: value-flash-down var(--motion-slow) var(--ease-out); border-radius: var(--radius-sm); }
+
+/* Soft pulsing dot for in-progress games */
+.pulse-live {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--warning);
+  animation: pulse-live 1.8s var(--ease-in-out) infinite;
+}
+
+/* Semantic numeric helpers */
+.is-positive { color: var(--positive); }
+.is-negative { color: var(--warning); }
+.is-highlight { color: var(--highlight); }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Odds, percentages, and money should stay column-aligned as they tick */
+.stat-card strong,
+.metric-row strong,
+.live-score-card strong,
+.selected-game-scorebug,
+.odds-card strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Cleaner interactive feel: lift + smooth state changes ---- */
+
+.insight-card,
+.game-chip,
+.live-score-card,
+.stat-card,
+.prompt-card {
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+
+.insight-card:hover,
+.game-chip:hover,
+.live-score-card:hover,
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-lift);
+}
+
+/* Mount animations on the high-traffic surfaces */
+.insight-card,
+.stat-card,
+.message-card {
+  animation: motion-rise var(--motion-base) var(--ease-out) both;
+}
+
+/* Sidebar nav/game: brand-tinted active state with an accent bar */
+.sidebar-nav-item,
+.sidebar-game-item,
+.sidebar-chat-item {
+  position: relative;
+}
+
+.sidebar-nav-item--active,
+.sidebar-game-item.active,
+.sidebar-chat-item.active {
+  background: var(--accent-surface);
+  color: var(--text);
+}
+
+.sidebar-nav-item--active::before,
+.sidebar-game-item.active::before,
+.sidebar-chat-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--brand);
+}
+
+/* Live games in the sidebar pulse softly */
+.sidebar-game-item--live .sidebar-game-item__inning::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--warning);
+  vertical-align: middle;
+  animation: pulse-live 1.8s var(--ease-in-out) infinite;
+}
+
+/* Staggered entrance for the sidebar game list */
+.sidebar-section-list > * {
+  animation: motion-rise var(--motion-base) var(--ease-out) both;
+}
+.sidebar-section-list > *:nth-child(1) { animation-delay: 20ms; }
+.sidebar-section-list > *:nth-child(2) { animation-delay: 55ms; }
+.sidebar-section-list > *:nth-child(3) { animation-delay: 90ms; }
+.sidebar-section-list > *:nth-child(4) { animation-delay: 125ms; }
+.sidebar-section-list > *:nth-child(n + 5) { animation-delay: 160ms; }
+
+/* Respect users who ask for less motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .insight-card:hover,
+  .game-chip:hover,
+  .live-score-card:hover,
+  .stat-card:hover,
+  .primary-button:hover,
+  .send-button:hover {
+    transform: none;
+  }
+}
+
+/* ============================================================
+   CHATBOT REFRESH  (Dugout Red — docs/design-spec.md §5 Chat)
+   Late in the cascade on purpose: overrides legacy flat-theme rules.
+   ============================================================ */
+
+.chat-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* User messages: right-aligned brand bubble */
+.message-card.user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: min(72%, 560px);
+  padding: 0.7rem 1rem;
+  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: 6px;
+  box-shadow: 0 6px 20px rgba(192, 87, 70, 0.22);
+}
+
+.message-card.user .message-body {
+  color: #fff;
+}
+
+/* Assistant messages: open, full-width, anchored by a tag pill */
+.message-card.assistant {
+  align-self: stretch;
+  max-width: 100%;
+  padding: 0.25rem 0 0.25rem 0.9rem;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid var(--accent-border);
+  border-radius: 0;
+}
+
+.message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+
+.message-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent-surface);
+  color: var(--accent-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.message-title {
+  color: var(--faint);
+  font-size: 0.78rem;
+}
+
+.message-body {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.97rem;
+  line-height: 1.6;
+}
+
+/* Composer: panel surface, brand focus glow */
+.composer,
+.composer--minimal {
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.composer--focused {
+  border-color: var(--brand);
+  box-shadow:
+    0 0 0 3px rgba(192, 87, 70, 0.25),
+    0 14px 36px rgba(0, 0, 0, 0.4);
+}
+
+.composer-input {
+  color: var(--text);
+}
+
+.composer-input::placeholder {
+  color: var(--faint);
+}
+
+.composer-floating-label {
+  color: var(--accent-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* Send button: brand gradient with tactile press */
+.send-button {
+  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  box-shadow: 0 4px 14px rgba(192, 87, 70, 0.35);
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
+}
+
+.send-button:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 6px 18px rgba(192, 87, 70, 0.45);
+}
+
+.send-button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.send-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Typing indicator: brand-tinted dots */
+.typing-indicator span {
+  background: var(--accent-text);
+}
+
+/* Quick prompt chips: pill-shaped, brand hover */
+.quick-prompt-chip {
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.quick-prompt-chip:hover {
+  background: var(--accent-surface);
+  border-color: var(--accent-border);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
 .chat-composer-shell {
   flex: 0 0 auto;
   padding: 14px 24px 22px;
@@ -5076,4 +5427,17 @@ body,
   border: none;
   border-top: 1px solid var(--line);
   margin: 8px 0;
+}
+
+/* Floating chat panel inherits the open composer style */
+.floating-chat-panel .composer {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .message-card.user {
+    max-width: 86%;
+  }
 }

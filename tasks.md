@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-Build a chatbot that answers live MLB forecasting questions using real-time game state, sportsbook odds, historical baseball data, and machine learning predictions.
+Build a chatbot that answers live MLB forecasting questions using real-time game state, sportsbook odds, historical data, and machine learning predictions.
 
 The chatbot should answer questions like:
 
@@ -11,11 +11,10 @@ What is the live win probability for the Yankees game?
 What are the fair odds for the Dodgers right now?
 Is the book overpricing the Mets?
 What is the projected final score for Red Sox vs Rays?
-Why did the win probability move?
-Show me today’s best model vs book differences.
+Show me today's best model vs book differences.
 ```
 
-This should be treated as an analytics and machine learning portfolio project, not betting advice.
+This is an analytics and machine learning portfolio project, not betting advice.
 
 ---
 
@@ -109,1207 +108,365 @@ The 10-Day Build Plan (Days 1–9) and the MVP Scope below are essentially **com
 
 ---
 
-## MVP Product Description
+## Core Design: Model-as-Data
 
-**MLB Forecasting Chatbot**
-
-The app ingests live MLB game data, pulls sportsbook odds, runs a machine learning model, and lets the user ask natural-language questions about live games.
-
-The chatbot returns:
+A trained model is just data, not a running thing. Training is heavy and rare; inference is cheap and constant. **You never train in the request path.**
 
 ```text
-Current inning / outs / base state
-Current score
-Live win probability
-Projected final score
-Projected total runs
-Projected moneyline
-Book odds
-No-vig implied probability
-Model vs book probability difference
-Plain-English explanation
+                 ┌──────────────────────────────────────────┐
+                 │  Node service (existing Express + tick)  │
+ MLB StatsAPI ──→│  • 15s tick loop (liveUpdateHub)         │
+ The Odds API ──→│  • ingest: games / odds / features ──────┼──→ Supabase Postgres
+ Anthropic ─────→│  • inference: p = σ(w·x_scaled + b)      │     games
+                 │  • loads models/win_prob_latest.json     │     odds_snapshots
+                 └──────────────▲───────────────────────────┘     feature_snapshots
+                                │ JSON artifact                   predictions
+                                │ (committed to repo)                  │
+                 ┌──────────────┴───────────────────────────┐         │
+                 │  GitHub Actions (weekly cron / manual)   │←────────┘
+                 │  ml/train_win_prob.py · scikit-learn     │  reads labeled
+                 │  StandardScaler + LogisticRegression     │  pregame rows
+                 └──────────────────────────────────────────┘
 ```
 
----
+**Two lifecycles:**
 
-## Example Chatbot Conversation
+- **Training (offline, occasional).** A GitHub Actions job reads accumulated history from Supabase — pregame feature snapshots joined to game outcomes — fits the model, and commits a small JSON artifact back to the repo. No always-on Python.
+- **Inference (online, constant).** The Node service loads the latest coefficients and scores with a dot product. Linear-model inference is arithmetic.
 
-### User
-
-```text
-What’s the live outlook for Yankees vs Red Sox?
-```
-
-### Bot
-
-```text
-Yankees vs Red Sox is currently in the bottom of the 6th.
-
-Score: Yankees 3, Red Sox 2
-Base state: runners on 1st and 3rd
-Outs: 1
-Count: 2-1
-
-Model win probability:
-Yankees: 68.1%
-Red Sox: 31.9%
-
-Projected final score:
-Yankees 5.1, Red Sox 3.9
-Projected total: 9.0 runs
-
-Book odds:
-Yankees -175
-Red Sox +145
-
-No-vig book probability:
-Yankees 62.2%
-Red Sox 37.8%
-
-Model fair odds:
-Yankees -214
-Red Sox +214
-
-Model vs book difference:
-Yankees +5.9 percentage points
-Red Sox -5.9 percentage points
-
-Interpretation: The model is slightly higher on the Yankees than the current market, mostly because they are leading late with runners on base.
-```
-
----
-
-## Core Product Features
-
-## 1. Chat Interface
-
-The frontend should look like a simple sports analytics assistant.
-
-Users type questions such as:
-
-```text
-Show me today's live MLB games.
-Give me the win probability for the Mets game.
-Translate the odds for Dodgers vs Padres.
-What does your model think the final score will be?
-Which games have the biggest difference between model probability and book probability?
-Explain why the Braves win probability is high.
-```
-
-The chatbot should respond with structured natural language, not just raw JSON.
-
----
-
-## 2. Intent Detection
-
-The chatbot needs to classify what the user is asking.
-
-Core intents:
-
-```text
-list_live_games
-get_game_status
-get_win_probability
-get_projected_score
-get_odds_translation
-get_model_vs_book_edge
-explain_prediction
-get_prediction_history
-general_help
-```
-
-Example mapping:
-
-```text
-User: "What games are live?"
-Intent: list_live_games
-
-User: "What are fair odds for the Yankees?"
-Intent: get_odds_translation
-
-User: "Why is the model high on the Dodgers?"
-Intent: explain_prediction
-
-User: "Which games have the best edge?"
-Intent: get_model_vs_book_edge
-```
-
-For MVP, you can do this with rule-based keyword matching. Later, use an LLM function-calling layer.
-
----
-
-## 3. Retrieval Layer
-
-The chatbot should not guess. It should retrieve the latest data from your backend.
-
-The chat service should call internal tools/functions like:
-
-```text
-get_live_games()
-get_live_game(game_pk)
-get_latest_odds(game_pk)
-get_prediction(game_pk)
-get_prediction_history(game_pk)
-get_top_model_edges()
-```
-
-The chatbot response should be grounded in these returned objects.
-
----
-
-## Recommended System Architecture
-
-```text
-mlb-forecast-chatbot/
-  backend/
-    app/
-      main.py
-      config.py
-
-      api/
-        chat_routes.py
-        live_routes.py
-        odds_routes.py
-        prediction_routes.py
-        health_routes.py
-
-      chatbot/
-        intent_router.py
-        response_builder.py
-        prompts.py
-        tools.py
-        memory.py
-
-      db/
-        database.py
-        schema.sql
-        queries.py
-
-      ingestion/
-        historical_statcast_ingest.py
-        historical_game_ingest.py
-        live_game_ingest.py
-        odds_ingest.py
-
-      features/
-        historical_features.py
-        live_features.py
-        odds_features.py
-
-      ml/
-        train_win_prob.py
-        train_score_model.py
-        evaluate.py
-        predict.py
-
-      services/
-        mlb_stats_client.py
-        odds_client.py
-        pybaseball_client.py
-
-      utils/
-        odds_math.py
-        baseball_state.py
-        team_mapping.py
-        game_matcher.py
-
-    models/
-      live_win_probability.pkl
-      score_projection.pkl
-
-    requirements.txt
-
-  frontend/
-    src/
-      App.tsx
-      api/client.ts
-      components/
-        ChatWindow.tsx
-        ChatMessage.tsx
-        ChatInput.tsx
-        GameChip.tsx
-        PredictionCard.tsx
-        OddsCard.tsx
-        EdgeCard.tsx
-
-  data/
-    raw/
-    processed/
-    snapshots/
-
-  scripts/
-    run_historical_ingest.py
-    run_live_ingest.py
-    run_train.py
-
-  docker-compose.yml
-  README.md
-```
-
----
-
-# Core Data Sources
-
-## 1. MLB StatsAPI
-
-Use this for live game schedule, live game feed, score, inning, outs, count, base runners, and current game state.
-
-Example live feed endpoint:
-
-```text
-https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live
-```
-
-Example schedule endpoint:
-
-```text
-https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=YYYY-MM-DD&hydrate=team,linescore
-```
-
----
-
-## 2. pybaseball
-
-Use this for historical Statcast and pitch-level data.
-
-Useful fields:
-
-```text
-game_pk
-game_date
-home_team
-away_team
-inning
-inning_topbot
-outs_when_up
-balls
-strikes
-on_1b
-on_2b
-on_3b
-home_score
-away_score
-bat_score
-fld_score
-batter
-pitcher
-events
-description
-pitch_type
-release_speed
-launch_speed
-launch_angle
-estimated_woba_using_speedangle
-```
-
----
-
-## 3. The Odds API
-
-Use this for live or pregame MLB odds.
-
-Sport key:
-
-```text
-baseball_mlb
-```
-
-Markets:
-
-```text
-h2h      -> moneyline
-spreads  -> run line
-totals   -> over/under
-```
-
----
-
-# Database Schema
-
-Use Postgres.
-
-## games
-
-```sql
-CREATE TABLE games (
-    game_pk TEXT PRIMARY KEY,
-    game_date DATE,
-    season INT,
-    home_team TEXT,
-    away_team TEXT,
-    venue TEXT,
-    status TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-```
-
----
-
-## live_game_snapshots
-
-```sql
-CREATE TABLE live_game_snapshots (
-    snapshot_id BIGSERIAL PRIMARY KEY,
-    game_pk TEXT REFERENCES games(game_pk),
-    collected_at TIMESTAMP DEFAULT NOW(),
-
-    inning INT,
-    half_inning TEXT,
-    outs INT,
-
-    home_score INT,
-    away_score INT,
-    run_diff INT,
-
-    batting_team TEXT,
-    pitching_team TEXT,
-
-    runner_on_first BOOLEAN,
-    runner_on_second BOOLEAN,
-    runner_on_third BOOLEAN,
-    base_state TEXT,
-
-    balls INT,
-    strikes INT,
-
-    current_batter_id TEXT,
-    current_pitcher_id TEXT,
-
-    raw_json JSONB
-);
-```
-
-Base state examples:
-
-```text
-empty
-1--
--2-
---3
-12-
-1-3
--23
-123
-```
-
----
-
-## odds_snapshots
-
-```sql
-CREATE TABLE odds_snapshots (
-    odds_id BIGSERIAL PRIMARY KEY,
-    game_pk TEXT REFERENCES games(game_pk),
-    collected_at TIMESTAMP DEFAULT NOW(),
-
-    bookmaker TEXT,
-
-    home_team TEXT,
-    away_team TEXT,
-
-    home_moneyline INT,
-    away_moneyline INT,
-
-    spread_line FLOAT,
-    home_spread_price INT,
-    away_spread_price INT,
-
-    total_line FLOAT,
-    over_price INT,
-    under_price INT,
-
-    raw_json JSONB
-);
-```
-
----
-
-## predictions
-
-```sql
-CREATE TABLE predictions (
-    prediction_id BIGSERIAL PRIMARY KEY,
-    game_pk TEXT REFERENCES games(game_pk),
-    snapshot_id BIGINT REFERENCES live_game_snapshots(snapshot_id),
-    created_at TIMESTAMP DEFAULT NOW(),
-
-    model_version TEXT,
-
-    home_win_probability FLOAT,
-    away_win_probability FLOAT,
-
-    projected_home_runs FLOAT,
-    projected_away_runs FLOAT,
-    projected_total_runs FLOAT,
-    projected_run_diff FLOAT,
-
-    fair_home_moneyline INT,
-    fair_away_moneyline INT,
-
-    home_no_vig_probability FLOAT,
-    away_no_vig_probability FLOAT,
-
-    home_probability_edge FLOAT,
-    away_probability_edge FLOAT
-);
-```
-
----
-
-## chat_logs
-
-Stores user questions and bot answers for debugging and product improvement.
-
-```sql
-CREATE TABLE chat_logs (
-    chat_id BIGSERIAL PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT NOW(),
-
-    user_message TEXT,
-    detected_intent TEXT,
-    game_pk TEXT,
-
-    tool_called TEXT,
-    response_text TEXT,
-
-    raw_context JSONB
-);
-```
-
----
-
-# Backend API Endpoints
-
-## Core data endpoints
-
-```text
-GET /api/health
-GET /api/live/games
-GET /api/live/games/{game_pk}
-GET /api/odds/{game_pk}
-GET /api/predict/{game_pk}
-GET /api/predictions/{game_pk}/history
-GET /api/edges/top
-```
-
-## Chatbot endpoint
-
-```text
-POST /api/chat
-```
-
-Request:
+**The model artifact** (`models/win_prob_latest.json`):
 
 ```json
 {
-  "message": "What is the win probability for the Yankees game?"
+  "model_version": "lr-2026-06-12",
+  "features": ["home_no_vig_prob", "home_team_win_pct", "away_team_win_pct"],
+  "scaler": { "mean": [...], "std": [...] },
+  "coef": [...], "intercept": -0.13,
+  "trained_at": "2026-06-12T10:00:00Z", "n_games": 412, "val_logloss": 0.61
 }
 ```
 
-Response:
+"Hosting" the model means storing this JSON. Every prediction row is stamped with `model_version`, so retrains stay comparable on identical historical games.
 
-```json
-{
-  "intent": "get_win_probability",
-  "game_pk": "746123",
-  "answer": "The Yankees have a 68.1% live win probability...",
-  "cards": [
-    {
-      "type": "prediction",
-      "home_team": "NYY",
-      "away_team": "BOS",
-      "home_win_probability": 0.681,
-      "away_win_probability": 0.319
-    }
-  ]
-}
+---
+
+## Two Correctness Rules
+
+### 1. Leakage rule
+Training rows only use features that existed **before** the outcome, snapshotted at a consistent point: the pregame feature row per game (`feature_snapshots.is_pregame = true`, enforced by a unique index). Use a **time-based** train/validation split, never random — or the backtest lies.
+
+### 2. Skew rule
+Training/serving skew happens when features are computed one way in Python at training and re-implemented in JS at inference. Mitigations in place:
+
+- **One feature builder as source of truth**: `server/features/buildFeatureVector.ts` produces both the persisted training rows and the live inference inputs. Python only reads persisted rows; it never recomputes features.
+- **Scaler exported with the model**: the artifact carries `mean`/`std`, so scaling at inference matches training exactly.
+- **Skew tripwire**: `server/model/predict.ts` validates the artifact's feature list against the builder's `FEATURE_NAMES` at load time and fails loudly on mismatch.
+
+---
+
+## Model Progression
+
+Each tier keeps the same contract — read features, write a versioned `predictions` row — so swapping model tiers never touches the rest of the system.
+
+```text
+Tier 0  de-vig formula        no training; market no-vig prob IS the model (devig-v0)  ✅ live
+Tier 1  logistic regression   JSON artifact + Node dot product                         ✅ wired
+Tier 2  gradient boosting     fit in Python, export to ONNX, run onnxruntime-web in Node
+Tier 3  Python service        joblib pickle + dedicated inference box — only at real scale
+```
+
+Tier 2 note: a tree ensemble can't be reduced to coefficients you score in JS. ONNX export carries preprocessing inside the graph, so there's nothing to re-implement — it solves skew for free.
+
+---
+
+## File Map (implemented)
+
+```text
+server/
+  db/supabase.ts                  Supabase client singleton (no-op if unconfigured)
+  db/schema.sql                   run once in Supabase SQL editor
+  ingest/ingestGames.ts           upsert games each tick; backfill labels at final
+  ingest/ingestOdds.ts            snapshot odds only when the line moves
+  ingest/ingestFeatures.ts        one pregame feature row per game + prediction
+  features/buildFeatureVector.ts  SINGLE source of truth for features
+  utils/oddsMath.ts               implied prob, no-vig, fair-odds conversion
+  model/artifact.ts               artifact JSON contract + validation
+  model/predict.ts                load artifact, dot product, devig-v0 fallback
+models/
+  win_prob_latest.json            the "hosted" model (created by first training run)
+ml/
+  train_win_prob.py               reads Supabase, fits LR, writes artifact
+  requirements.txt
+.github/workflows/train.yml       weekly cron + manual trigger, commits artifact
 ```
 
 ---
 
-# Chatbot Components
+## Database Schema (Supabase Postgres)
 
-## intent_router.py
+See `server/db/schema.sql` for the full DDL.
 
-Purpose: decide what the user wants.
+```text
+games              game_pk PK, teams, date, status, final_* scores, home_win (label)
+odds_snapshots     moneylines + no-vig probs, written only when the line moves
+feature_snapshots  one pregame row per game: feature_names[], feature_values[], JSONB
+predictions        model_version-stamped probs, fair odds, edge vs book
+```
 
-Simple MVP version:
+Setup: create a free Supabase project, run `schema.sql` in the SQL editor, set `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` in `.env` (and as GitHub Actions secrets).
 
-```python
-TEAM_KEYWORDS = {
-    "yankees": "NYY",
-    "red sox": "BOS",
-    "dodgers": "LAD",
-    "mets": "NYM",
-    "padres": "SD",
-}
+---
 
+## Ingestion (tick-loop hooks, no separate scheduler)
 
-def detect_intent(message: str) -> str:
-    msg = message.lower()
+The existing 15-second tick in `server/liveUpdateHub.ts` drives everything:
 
-    if "live games" in msg or "games today" in msg:
-        return "list_live_games"
+```text
+tick()
+  ├─ fetchScoreboard()                 (existing live updates — unchanged)
+  ├─ ingestGames(cards, date)          upsert games; label home_win when final
+  ├─ ingestOdds(cards)                 insert snapshot only if line moved (hash check)
+  └─ ingestFeatures(cards)             first time a game is seen pregame WITH odds:
+                                         buildFeatureVector → feature_snapshots row
+                                         predictGame → predictions row (version-stamped)
+```
 
-    if "win probability" in msg or "chance" in msg:
-        return "get_win_probability"
+Ingestion failures are caught and logged — they never break live updates. Without Supabase env vars, all writers silently no-op.
 
-    if "projected score" in msg or "final score" in msg:
-        return "get_projected_score"
+---
 
-    if "odds" in msg or "moneyline" in msg or "fair" in msg:
-        return "get_odds_translation"
+## Training Loop
 
-    if "edge" in msg or "difference" in msg or "model vs book" in msg:
-        return "get_model_vs_book_edge"
+```text
+1. Let the server run — labeled rows accumulate (need ~50+ final games)
+2. Trigger .github/workflows/train.yml (manual or weekly cron)
+3. ml/train_win_prob.py:
+     - last pregame snapshot per game JOIN games.home_win
+     - time-based split (most recent 20% = validation)
+     - StandardScaler + LogisticRegression
+     - report log loss / Brier vs the market-baseline log loss
+     - write models/win_prob_<date>.json + win_prob_latest.json
+4. Workflow commits the artifact; Node picks it up (5-min refresh)
+```
 
-    if "why" in msg or "explain" in msg:
-        return "explain_prediction"
+Retrain trigger: weekly cron, or manually after every N new completed games.
 
-    return "general_help"
+---
 
+## Running Locally (Runbook)
 
-def extract_team(message: str):
-    msg = message.lower()
-    for name, abbr in TEAM_KEYWORDS.items():
-        if name in msg:
-            return abbr
-    return None
+Full setup instructions live in `README.md`. Quick reference:
+
+```bash
+npm install && cp .env.example .env   # fill in keys
+npm run dev:server                    # backend :8787 — tick loop + ingestion auto-start
+npm run dev                           # frontend :5173
+```
+
+One-time Supabase setup: create a free project, run `server/db/schema.sql` in the SQL editor, put `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` in `.env` and in GitHub repo secrets (for the training workflow).
+
+Sanity checks:
+
+```bash
+curl localhost:8787/api/model             # devig-v0 until first training run
+curl localhost:8787/api/predict/<gamePk>  # prediction (requires ODDS_API_KEY)
+```
+
+Backfill live-state training data from past results (no waiting for accumulation):
+
+```bash
+npm run backfill:live -- --start 2026-04-01 --end 2026-06-10
+# reconstructs per-at-bat states from archived play-by-play; writes labeled
+# games + is_pregame=false feature rows (~75 per game)
+```
+
+Train manually once ≥50 labeled games exist (backfill satisfies this immediately):
+
+```bash
+pip install -r ml/requirements.txt
+npm run train   # needs SUPABASE_* in the environment
+# fits BOTH artifacts: win_prob_latest.json (pregame) and
+# win_prob_live_latest.json (live) — wait ≤5 min, /api/model shows versions
+```
+
+Or trigger the "Train win probability model" workflow in the GitHub Actions tab.
+
+Troubleshooting:
+
+```text
+"Supabase not configured" in server logs   → env vars missing; ingestion no-ops
+No odds / no predictions                   → ODDS_API_KEY missing or quota hit
+"artifact features do not match" crash     → feature builder changed since last
+                                             train; delete/retrain the artifact
+Training prints "Skipping retrain"         → fewer than 50 labeled games so far
 ```
 
 ---
 
-## tools.py
+## Testing & Comparison
 
-Purpose: functions the chatbot can call.
+```text
+[x] Tier 0 live: GET /api/predict/:gamePk returns devig-v0 before any training
+[ ] Accumulate 2-4 weeks of labeled games in Supabase
+[ ] First training run beats / matches market baseline log loss
+[ ] Prospective test: let new version run live, score predictions after finals
+[ ] /backtest endpoint: re-score identical historical snapshots under multiple
+    model_versions and rank by log loss / Brier (Phase 3)
+```
 
-```python
-from app.db.queries import (
-    get_today_games,
-    get_latest_live_snapshot,
-    get_latest_odds,
-    get_latest_prediction,
-    get_top_edges,
-)
+The market is a strong baseline — large disagreements with the no-vig probability usually mean the model is wrong, which is itself informative.
 
+---
 
-def list_live_games():
-    return get_today_games()
+## Phase Checklists
 
+### Phase 0 — De-vig translation (no training) ✅
+```text
+[x] oddsMath.ts: implied prob, no-vig, fair-odds conversion
+[x] devig-v0 fallback model in predict.ts
+[x] GET /api/predict/:gamePk and GET /api/model endpoints
+[x] Prediction wired into chat context (server/chat.ts)
+```
 
-def get_game_prediction(game_pk: str):
-    snapshot = get_latest_live_snapshot(game_pk)
-    odds = get_latest_odds(game_pk)
-    prediction = get_latest_prediction(game_pk)
+### Phase 1 — Ingestion + feature store ✅ (code) / ⏳ (data)
+```text
+[x] Supabase schema (server/db/schema.sql)
+[x] ingestGames / ingestOdds / ingestFeatures hooked into tick loop
+[x] Single feature builder (buildFeatureVector.ts)
+[ ] Create Supabase project + run schema.sql
+[ ] Set SUPABASE_URL / SUPABASE_SERVICE_KEY in .env
+[ ] Verify rows accumulate in Supabase dashboard
+[ ] Let it run until ~50+ games have labels
+```
 
-    return {
-        "snapshot": snapshot,
-        "odds": odds,
-        "prediction": prediction,
-    }
+### Phase 2 — Trained LR model ✅ (code) / ⏳ (run)
+```text
+[x] ml/train_win_prob.py (time-split, scaler, LR, metrics, artifact)
+[x] .github/workflows/train.yml (cron + manual, commits artifact)
+[x] Node artifact loader with skew tripwire + 5-min refresh
+[ ] Add SUPABASE_* secrets to GitHub repo settings
+[ ] First successful training run; confirm Node serves lr-* version
+```
 
+### Phase 2.5 — Live-state model trained on past results ✅ (code) / ⏳ (run)
+```text
+[x] Live feature builder (buildLiveFeatureVector.ts): inning, half, outs,
+    run diff, total runs, base runners, team win pcts — no odds, so it
+    trains purely from historical results
+[x] Per-at-bat state reconstruction from archived play-by-play feeds
+    (reconstructLiveStates.ts)
+[x] Backfill script: npm run backfill:live -- --start ... --end ...
+[x] Live snapshot ingestion during games (state-change detection)
+[x] Training fits a second artifact (win_prob_live_latest.json) with a
+    BY-GAME time split so one game's states never straddle train/validation
+[x] Inference routes live games to the live model; falls back to
+    pregame/devig when no live artifact exists
+[ ] Run the backfill over the season to date (gives training data instantly,
+    no waiting for accumulation)
+[ ] Train: npm run train — confirm /api/model reports lr-live-<date>
+```
 
-def get_best_model_edges(limit: int = 5):
-    return get_top_edges(limit=limit)
+### Phase 3 — Backtesting
+```text
+[ ] GET /api/backtest: re-score historical pregame snapshots under each
+    artifact version; report log loss / Brier / calibration per version
+[ ] Profit/loss simulation vs closing moneyline
+[ ] "Top edges" tab in the frontend fed by predictions table
+```
+
+### Phase 4 — Richer features, then gradient boosting via ONNX
+
+Data still left out of the win probability models, and where to pull it.
+All of it comes from the free MLB StatsAPI — add to the feature builders,
+backfill/accumulate, retrain (the artifact tripwire forces the retrain).
+
+```text
+STARTING PITCHER QUALITY (pregame + live models)
+[ ] Probable starters      GET /api/v1/schedule?hydrate=probablePitcher
+[ ] Season pitching stats  GET /api/v1/people/{id}/stats?stats=season&group=pitching
+    → ERA, WHIP, K/9, BB/9, innings per start
+[ ] Recent form            stats=gameLog → last 3 starts ERA / pitch counts
+
+BULLPEN FEATURES (the big omission)
+[ ] Bullpen season stats   GET /api/v1/teams/{id}/stats?group=pitching
+    minus starters → bullpen ERA, WHIP, K%
+[ ] Bullpen fatigue        boxscores from the last 3 days
+    (GET /api/v1.1/game/{pk}/feed/live per recent game) → relief innings
+    thrown per team over 1/3/5 days → fatigue score
+[ ] Live bullpen state     current feed boxscore → which relievers already
+    used tonight; starter pitch count (liveData.boxscore pitchersFaced/pitches)
+
+TEAM RECENT FORM
+[ ] Last 10/30 game runs scored & allowed
+    GET /api/v1/schedule?teamId=...&startDate=...&endDate=... finals
+
+GAME CONTEXT
+[ ] Park factor            static lookup table by venue (publicly published)
+[ ] Home/away splits       team stats endpoint with sitCodes
+[ ] Rest/travel            derive from schedule (games on consecutive days)
+
+MODEL UPGRADE PATH
+[ ] Fit GradientBoosting/XGBoost in Python, export to ONNX with preprocessing
+[ ] Score with onnxruntime-web in Node (same predictions contract)
+```
+
+Note the leakage rule applies to every new feature: pregame features must be
+snapshotted before first pitch; live features must reflect only the state at
+that at-bat (e.g. "relievers used so far tonight" is fine, "total relievers
+used in the game" is not).
+
+### Phase 5 — Python inference service (only at real scale)
+```text
+[ ] Bring back the dedicated ml box only when models outgrow ONNX-in-Node
+    or need always-on scoring
 ```
 
 ---
 
-## response_builder.py
+## MVP Chatbot Scope
 
-Purpose: convert data into a natural chatbot answer.
-
-```python
-def format_percent(value: float) -> str:
-    return f"{value * 100:.1f}%"
-
-
-def build_win_probability_response(context: dict) -> str:
-    snapshot = context["snapshot"]
-    prediction = context["prediction"]
-
-    home_team = snapshot["home_team"]
-    away_team = snapshot["away_team"]
-
-    return f"""
-{home_team} vs {away_team} is currently in the {snapshot['half_inning']} of the {snapshot['inning']} inning.
-
-Score: {home_team} {snapshot['home_score']}, {away_team} {snapshot['away_score']}
-Base state: {snapshot['base_state']}
-Outs: {snapshot['outs']}
-Count: {snapshot['balls']}-{snapshot['strikes']}
-
-Model win probability:
-{home_team}: {format_percent(prediction['home_win_probability'])}
-{away_team}: {format_percent(prediction['away_win_probability'])}
-
-Projected final score:
-{home_team} {prediction['projected_home_runs']:.1f}, {away_team} {prediction['projected_away_runs']:.1f}
-""".strip()
-```
-
----
-
-## chat_routes.py
-
-```python
-from fastapi import APIRouter
-from pydantic import BaseModel
-
-from app.chatbot.intent_router import detect_intent, extract_team
-from app.chatbot.tools import list_live_games, get_game_prediction, get_best_model_edges
-from app.chatbot.response_builder import build_win_probability_response
-from app.db.queries import find_live_game_by_team, insert_chat_log
-
-router = APIRouter(prefix="/api/chat", tags=["chat"])
-
-
-class ChatRequest(BaseModel):
-    message: str
-
-
-@router.post("")
-def chat(request: ChatRequest):
-    message = request.message
-    intent = detect_intent(message)
-    team = extract_team(message)
-
-    if intent == "list_live_games":
-        games = list_live_games()
-        answer = "Here are today's MLB games:\n" + "\n".join(
-            [f"- {g['away_team']} at {g['home_team']}: {g['status']}" for g in games]
-        )
-        return {"intent": intent, "answer": answer, "data": games}
-
-    if team:
-        game = find_live_game_by_team(team)
-        if not game:
-            return {
-                "intent": intent,
-                "answer": f"I could not find a live game for {team} right now."
-            }
-
-        context = get_game_prediction(game["game_pk"])
-
-        if intent == "get_win_probability":
-            answer = build_win_probability_response(context)
-        else:
-            answer = build_win_probability_response(context)
-
-        insert_chat_log(
-            user_message=message,
-            detected_intent=intent,
-            game_pk=game["game_pk"],
-            tool_called="get_game_prediction",
-            response_text=answer,
-            raw_context=context,
-        )
-
-        return {
-            "intent": intent,
-            "game_pk": game["game_pk"],
-            "answer": answer,
-            "data": context,
-        }
-
-    if intent == "get_model_vs_book_edge":
-        edges = get_best_model_edges(limit=5)
-        answer = "Here are the biggest model vs book differences right now:\n" + "\n".join(
-            [f"- {e['home_team']} vs {e['away_team']}: {e['home_probability_edge'] * 100:.1f} pts" for e in edges]
-        )
-        return {"intent": intent, "answer": answer, "data": edges}
-
-    return {
-        "intent": "general_help",
-        "answer": "Ask me about live MLB games, win probability, projected score, odds translation, or model vs book differences."
-    }
-```
-
----
-
-# Ingestion Pipeline Tasks
-
-## Historical ingestion
-
-```text
-[ ] Install pybaseball
-[ ] Pull Statcast data by date range
-[ ] Save raw data as Parquet
-[ ] Keep only regular season games first
-[ ] Remove rows with missing game_pk
-[ ] Normalize team abbreviations
-[ ] Build historical training rows
-[ ] Save mlb_training_rows.parquet
-```
-
----
-
-## Live game ingestion
-
-```text
-[ ] Build MLBStatsClient
-[ ] Pull today’s MLB schedule
-[ ] Extract game_pk
-[ ] Upsert each game into games table
-[ ] For live games, call live feed endpoint
-[ ] Parse inning, half inning, score, outs, base runners
-[ ] Insert into live_game_snapshots
-```
-
----
-
-## Odds ingestion
-
-```text
-[ ] Build OddsClient
-[ ] Pull MLB odds from The Odds API
-[ ] Parse h2h, spreads, and totals
-[ ] Match odds game to MLB game_pk
-[ ] Store odds snapshots
-[ ] Convert American odds to implied probability
-[ ] Remove vig from moneyline market
-[ ] Save no-vig probabilities
-```
-
----
-
-# Odds Math Utilities
-
-Create:
-
-```text
-backend/app/utils/odds_math.py
-```
-
-```python
-def american_to_implied_prob(odds: int) -> float:
-    if odds < 0:
-        return abs(odds) / (abs(odds) + 100)
-    return 100 / (odds + 100)
-
-
-def implied_prob_to_american(prob: float) -> int:
-    if prob <= 0 or prob >= 1:
-        raise ValueError("Probability must be between 0 and 1")
-
-    if prob >= 0.5:
-        return round(-100 * prob / (1 - prob))
-
-    return round(100 * (1 - prob) / prob)
-
-
-def remove_vig_two_way(prob_a: float, prob_b: float):
-    total = prob_a + prob_b
-    return prob_a / total, prob_b / total
-
-
-def translate_moneyline(home_odds: int, away_odds: int):
-    home_raw = american_to_implied_prob(home_odds)
-    away_raw = american_to_implied_prob(away_odds)
-
-    home_no_vig, away_no_vig = remove_vig_two_way(home_raw, away_raw)
-
-    return {
-        "home_raw_implied": home_raw,
-        "away_raw_implied": away_raw,
-        "home_no_vig": home_no_vig,
-        "away_no_vig": away_no_vig,
-        "book_hold": home_raw + away_raw - 1
-    }
-```
-
----
-
-# Feature Engineering Tasks
-
-Create:
-
-```text
-backend/app/features/live_features.py
-```
-
-Version 1 features:
-
-```text
-inning
-is_top_inning
-outs
-balls
-strikes
-home_score
-away_score
-run_diff
-current_total_runs
-batting_team_is_home
-runner_on_first
-runner_on_second
-runner_on_third
-base_state_encoded
-pregame_home_no_vig_prob
-pregame_total
-```
-
-Checklist:
-
-```text
-[ ] Convert half inning to is_top_inning
-[ ] Convert runners to 0/1 flags
-[ ] Encode base state
-[ ] Calculate run differential
-[ ] Calculate current total runs
-[ ] Add pregame market features from odds
-[ ] Return one-row DataFrame for prediction
-```
-
----
-
-# Model Training Tasks
-
-## Model 1: Live win probability
-
-Target:
-
-```text
-home_win
-```
-
-Metrics:
-
-```text
-Log loss
-Brier score
-ROC-AUC
-Calibration curve
-```
-
-Checklist:
-
-```text
-[ ] Load historical training rows
-[ ] Sort by game_date to prevent leakage
-[ ] Train/test split by date, not random
-[ ] Train baseline Logistic Regression
-[ ] Train Gradient Boosting model
-[ ] Calibrate probabilities
-[ ] Save model as live_win_probability.pkl
-```
-
----
-
-## Model 2: Final score projection
-
-Targets:
-
-```text
-final_home_runs
-final_away_runs
-```
-
-Metrics:
-
-```text
-Mean absolute error for home runs
-Mean absolute error for away runs
-Mean absolute error for total runs
-Mean absolute error for run differential
-```
-
-Checklist:
-
-```text
-[ ] Train score projection model
-[ ] Predict home and away final runs
-[ ] Calculate projected total
-[ ] Calculate projected run differential
-[ ] Save model as score_projection.pkl
-```
-
----
-
-# Prediction Service Flow
-
-```text
-User asks question
-↓
-Chatbot detects intent
-↓
-Chatbot extracts team/game
-↓
-Chatbot calls prediction tool
-↓
-Backend loads latest live snapshot
-↓
-Backend loads latest odds snapshot
-↓
-Backend builds feature row
-↓
-ML model predicts win probability and score
-↓
-Odds math converts probability to fair odds
-↓
-Response builder turns prediction into natural language
-↓
-Chatbot returns answer and optional cards
-```
-
----
-
-# Frontend Chatbot Tasks
-
-Build these components:
-
-```text
-ChatWindow
-ChatMessage
-ChatInput
-GameChip
-PredictionCard
-OddsCard
-EdgeCard
-```
-
-Frontend checklist:
-
-```text
-[ ] Create chat UI
-[ ] Add message input
-[ ] Send messages to POST /api/chat
-[ ] Render assistant answers
-[ ] Render prediction cards when returned
-[ ] Add quick prompt buttons
-[ ] Add loading state
-[ ] Add error state
-```
-
-Quick prompt buttons:
-
-```text
-Show live games
-Best model edges
-Yankees win probability
-Projected score
-Translate odds
-```
-
----
-
-# Scheduler Tasks
-
-Use APScheduler or a simple background loop.
-
-Cadence:
-
-```text
-Live game ingest: every 15 seconds
-Odds ingest: every 60 seconds
-Prediction generation: after every live snapshot
-Historical ingest: daily or manual
-Model retraining: daily or weekly
-```
-
-Checklist:
-
-```text
-[ ] Add scheduler to backend
-[ ] Poll MLB live game feed
-[ ] Poll odds API
-[ ] Generate prediction after live snapshot insert
-[ ] Avoid duplicate snapshots if nothing changed
-[ ] Log failed API calls
-```
-
----
-
-# Your 10-Day Build Plan
-
-## Day 1: Project setup
-
-```text
-[ ] Create repo: mlb-forecast-chatbot
-[ ] Create FastAPI backend
-[ ] Create React frontend
-[ ] Add Docker Compose with Postgres
-[ ] Add .env
-[ ] Add database schema
-[ ] Add health endpoint
-```
-
----
-
-## Day 2: Live MLB ingestion
-
-```text
-[ ] Build MLBStatsClient
-[ ] Pull today’s schedule
-[ ] Extract game_pk
-[ ] Pull live feed for one game
-[ ] Parse inning, score, outs, base runners
-[ ] Save live snapshots to Postgres
-[ ] Create GET /api/live/games
-```
-
----
-
-## Day 3: Odds ingestion
-
-```text
-[ ] Get The Odds API key
-[ ] Build OddsClient
-[ ] Pull MLB moneyline, run line, totals
-[ ] Create team name mapping
-[ ] Match odds to game_pk
-[ ] Save odds snapshots
-[ ] Build odds translation utilities
-[ ] Create GET /api/odds/{game_pk}
-```
-
----
-
-## Day 4: Historical data pipeline
-
-```text
-[ ] Install pybaseball
-[ ] Pull Statcast data for a small date range
-[ ] Save raw Parquet
-[ ] Clean columns
-[ ] Build base runner flags
-[ ] Build final game targets
-[ ] Save mlb_training_rows.parquet
-```
-
----
-
-## Day 5: Win probability model
-
-```text
-[ ] Train baseline Logistic Regression
-[ ] Train Gradient Boosting model
-[ ] Evaluate log loss
-[ ] Evaluate Brier score
-[ ] Calibrate model
-[ ] Save live_win_probability.pkl
-```
-
----
-
-## Day 6: Score projection model
-
-```text
-[ ] Train final score model
-[ ] Predict home and away final runs
-[ ] Calculate projected total
-[ ] Calculate projected run differential
-[ ] Evaluate MAE
-[ ] Save score_projection.pkl
-```
-
----
-
-## Day 7: Prediction endpoint
-
-```text
-[ ] Load latest live snapshot
-[ ] Load latest odds snapshot
-[ ] Build live feature row
-[ ] Run win probability model
-[ ] Run score projection model
-[ ] Convert model probability to fair odds
-[ ] Compare against no-vig book probability
-[ ] Save prediction
-[ ] Create GET /api/predict/{game_pk}
-```
-
----
-
-## Day 8: Chatbot backend
-
-```text
-[ ] Create POST /api/chat
-[ ] Build intent_router.py
-[ ] Build tools.py
-[ ] Build response_builder.py
-[ ] Support list_live_games
-[ ] Support get_win_probability
-[ ] Support get_projected_score
-[ ] Support get_odds_translation
-[ ] Support get_model_vs_book_edge
-[ ] Save chat logs
-```
-
----
-
-## Day 9: Chatbot frontend
-
-```text
-[ ] Build ChatWindow
-[ ] Build ChatMessage
-[ ] Build ChatInput
-[ ] Connect to POST /api/chat
-[ ] Add quick prompt buttons
-[ ] Render text responses
-[ ] Render prediction cards
-[ ] Render odds cards
-```
-
----
-
-## Day 10: Polish for portfolio
-
-```text
-[ ] Add README
-[ ] Add screenshots
-[ ] Add architecture diagram
-[ ] Add example chatbot questions
-[ ] Add model evaluation section
-[ ] Add limitations section
-[ ] Add demo video
-[ ] Add resume bullets
-```
-
----
-
-# MVP Scope
-
-Your first chatbot should answer only these:
+The chatbot should answer only these first:
 
 ```text
 What games are live?
 What is the live score?
 What is the home team win probability?
-What is the projected final score?
 What are the current book odds?
 What are the no-vig probabilities?
 What are the model fair odds?
 What is the model vs book difference?
 ```
 
-Do not build these yet:
+Not yet: player props, pitch-level models, Monte Carlo simulation, weather, bullpen fatigue, batter-vs-pitcher matchup engine.
+
+---
+
+## Resume Bullets
 
 ```text
-Player props
-Strikeout props
-Home run props
-Pitch-level outcome model
-Monte Carlo simulator
-Weather model
-Bullpen fatigue model
-Batter vs pitcher matchup engine
+Built an MLB forecasting chatbot that answers natural-language questions about
+live win probability, sportsbook odds, fair moneyline pricing, and
+model-vs-market differences.
+
+Designed a "model-as-data" ML pipeline: Node ingestion writes versioned feature
+snapshots to Supabase Postgres, a scheduled GitHub Actions job trains
+scikit-learn models offline, and the Node service performs inference from a
+committed JSON artifact — eliminating the need for an always-on ML service.
+
+Prevented training/serving skew with a single TypeScript feature builder used
+for both training-row persistence and live inference, with artifact-level
+feature validation as a load-time tripwire.
+
+Implemented leakage-safe training: pregame-only feature snapshots, time-based
+train/validation splits, and model_version-stamped predictions enabling
+apples-to-apples backtests across retrains.
 ```
 
 ---
 
-# Expanded Analytics Scope
-
-Use this as the working scope for the next phase of the project:
+# Original Expanded Scope (pregame feature wishlist)
 
 ```text
-You are an agentic AI baseball analytics engineer helping me build an MLB prediction and live game analysis system.
-
-Your job is to design and help implement a pipeline that analyzes historical and current team/player data to estimate game outlook, win probability, fair odds, and model edge.
-
-Focus on the following data categories:
-
 1. Team hitting profile
 - Recent team batting performance over last 5, 10, 15, and 30 games
 - Runs scored, wRC+, OPS, OBP, SLG
