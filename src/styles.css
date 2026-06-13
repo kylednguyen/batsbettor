@@ -2490,26 +2490,26 @@ button {
   line-height: 1.5;
 }
 
-.typing-indicator {
-  display: flex;
-  gap: 5px;
-  padding: 4px 0;
+/* Typewriter caret: a blinking block that trails the revealed text and stands
+   in for the "loading" state before the answer starts streaming. */
+.type-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent-text);
+  border-radius: 1px;
+  animation: caret-blink 1s steps(1) infinite;
 }
 
-.typing-indicator span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-secondary, #888);
-  animation: typing-bounce 1.2s infinite ease-in-out;
+@keyframes caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
 }
 
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typing-bounce {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-  40% { transform: translateY(-6px); opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .type-caret { animation: none; opacity: 0.8; }
 }
 
 .dashboard-grid {
@@ -5190,11 +5190,6 @@ body,
 .send-button:disabled {
   opacity: 0.45;
   cursor: default;
-}
-
-/* Typing indicator: brand-tinted dots */
-.typing-indicator span {
-  background: var(--accent-text);
 }
 
 /* Quick prompt chips: pill-shaped, brand hover */
