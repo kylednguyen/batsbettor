@@ -7,6 +7,8 @@ import { ChatInput } from './components/ChatInput'
 import { ChatWindow } from './components/ChatWindow'
 import { SelectedGamePanel, GamePreviewScoreboard } from './components/SelectedGamePanel'
 import { ModelInsights, ModelTakeaway } from './components/ModelInsights'
+import { PregameOverview } from './components/GameOverview'
+import { LiveGamesDashboard, TopEdgesDashboard, OddsDashboard, useSlatePredictions } from './components/Dashboards'
 import { getGameFeed, getPrediction, getScoreCardsByDate, getTodayScoreCardSummary, sendChatMessage } from './api/client'
 
 import type { ScoreCard, ScoreBox, ChatMessage, Prediction } from './types'
@@ -111,6 +113,7 @@ export default function App() {
   const [predictionError, setPredictionError] = useState('')
   const [scoreError, setScoreError] = useState('')
   const [activeChatId, setActiveChatId] = useState('new-chat')
+  const [activeView, setActiveView] = useState<'chat' | 'live' | 'edges' | 'odds'>('chat')
   const [isSidebarGamesExpanded, setIsSidebarGamesExpanded] = useState(false)
   const [sidebarDateOffset, setSidebarDateOffset] = useState(0)
   const [sidebarDateCards, setSidebarDateCards] = useState<ScoreCard[]>([])
@@ -141,7 +144,11 @@ export default function App() {
     selectedGameCard ??
     null
 
-  const isNewChat = activeChatId === 'new-chat'
+  const isNewChat = activeChatId === 'new-chat' && activeView === 'chat'
+  const dashboardActive = activeView !== 'chat'
+  // Only fetch slate-wide predictions when a dashboard is open, so the chat
+  // view never triggers a fan-out of per-game prediction requests.
+  const slate = useSlatePredictions(dashboardActive ? sortedScoreCards : [])
   const sidebarActiveDate = shiftEasternDate(today, sidebarDateOffset)
   const dateOptions = Array.from({ length: 9 }, (_, index) => shiftEasternDate(today, index - 4))
   const visibleSidebarCards = isSidebarGamesExpanded ? sidebarDateCards : sortedScoreCards.slice(0, 6)
@@ -362,6 +369,7 @@ export default function App() {
 
   function handleNewChat() {
     setActiveChatId('new-chat')
+    setActiveView('chat')
     setPrompt('')
     setMessages([])
     setSelectedGamePk(null)
@@ -370,6 +378,9 @@ export default function App() {
 
 
   async function handleSendMessage(message: string) {
+    // The composer floats over every view — sending from a dashboard brings the
+    // chat forward so the reply is visible.
+    setActiveView('chat')
     const userMessage: ChatMessage = { role: 'user', body: message }
     setMessages((prev) => [...prev, userMessage])
     setChatLoading(true)
@@ -400,13 +411,20 @@ export default function App() {
           <nav className="sidebar-nav">
             {navItems.map((item) => (
               <button
-                className={`sidebar-nav-item${item.id === 'new' && isNewChat ? ' sidebar-nav-item--active' : ''}`}
+                className={`sidebar-nav-item${
+                  (item.id === 'new' && isNewChat) ||
+                  (item.id === 'live' && activeView === 'live') ||
+                  (item.id === 'edges' && activeView === 'edges') ||
+                  (item.id === 'odds' && activeView === 'odds')
+                    ? ' sidebar-nav-item--active'
+                    : ''
+                }`}
                 key={item.id}
                 onClick={() => {
                   if (item.id === 'new') { handleNewChat(); return }
-                  if (item.id === 'live') setPrompt('What games are live right now?')
-                  if (item.id === 'edges') setPrompt('Which games have the biggest model vs book gap right now?')
-                  if (item.id === 'odds') setPrompt("Translate tonight's MLB moneylines into fair odds.")
+                  if (item.id === 'live') setActiveView('live')
+                  if (item.id === 'edges') setActiveView('edges')
+                  if (item.id === 'odds') setActiveView('odds')
                 }}
                 type="button"
               >
@@ -542,39 +560,66 @@ export default function App() {
 
       <section className="chatgame-main main-workspace">
         <header className="main-chat-header">
-          <span className="main-chat-header__title">{isNewChat ? 'New chat' : 'Assistant'}</span>
-          {selectedCard ? (
+          <span className="main-chat-header__title">
+            {dashboardActive
+              ? activeView === 'live'
+                ? 'Live games'
+                : activeView === 'edges'
+                  ? 'Top edges'
+                  : 'Odds'
+              : isNewChat
+                ? 'New chat'
+                : 'Assistant'}
+          </span>
+          {!dashboardActive && selectedCard ? (
             <span className="main-chat-header__context">{selectedCard.awayAbbreviation} @ {selectedCard.homeAbbreviation}</span>
           ) : null}
         </header>
 
-        <div className="main-chat-scroll">
-          {messages.length === 0 && !chatLoading ? (
-            <div className="main-chat-empty">
-              <div className="main-chat-empty-inner">
-                <h1 className="main-chat-empty__title">How can I help, Kyle?</h1>
-                <p className="main-chat-empty__sub">
-                  {selectedCard
-                    ? 'Ask about this game — win probability, the pitching matchup, bullpen rest, fair odds, or the model edge.'
-                    : 'Ask about live games, win probability, projected scores, fair odds, or the biggest model-vs-book edges.'}
-                </p>
-                <div className="prompt-grid">
-                  {(selectedCard
-                    ? ['Who does the model favor and why?', 'How do the starting pitchers compare?', 'Is there an edge vs the book?', 'What is the projected final score?']
-                    : quickPrompts
-                  ).map((p) => (
-                    <button className="prompt-card" key={p} onClick={() => setPrompt(p)} type="button">
-                      {p}
-                    </button>
-                  ))}
+        {dashboardActive ? (
+          <div className="main-chat-scroll dashboard-scroll">
+            {activeView === 'live' && (
+              <LiveGamesDashboard cards={sortedScoreCards} predictions={slate.byGame} loading={slateLoading} onSelect={handleSelectGame} />
+            )}
+            {activeView === 'edges' && (
+              <TopEdgesDashboard cards={sortedScoreCards} predictions={slate.byGame} loading={slateLoading || slate.loading} onSelect={handleSelectGame} />
+            )}
+            {activeView === 'odds' && (
+              <OddsDashboard cards={sortedScoreCards} predictions={slate.byGame} loading={slateLoading || slate.loading} onSelect={handleSelectGame} />
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="main-chat-scroll">
+              {messages.length === 0 && !chatLoading ? (
+                <div className="main-chat-empty">
+                  <div className="main-chat-empty-inner">
+                    <h1 className="main-chat-empty__title">How can I help, Kyle?</h1>
+                    <p className="main-chat-empty__sub">
+                      {selectedCard
+                        ? 'Ask about this game — win probability, the pitching matchup, bullpen rest, fair odds, or the model edge.'
+                        : 'Ask about live games, win probability, projected scores, fair odds, or the biggest model-vs-book edges.'}
+                    </p>
+                    <div className="prompt-grid">
+                      {(selectedCard
+                        ? ['Who does the model favor and why?', 'How do the starting pitchers compare?', 'Is there an edge vs the book?', 'What is the projected final score?']
+                        : quickPrompts
+                      ).map((p) => (
+                        <button className="prompt-card" key={p} onClick={() => setPrompt(p)} type="button">
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <ChatWindow messages={messages} loading={chatLoading} />
+              )}
             </div>
-          ) : (
-            <ChatWindow messages={messages} loading={chatLoading} />
-          )}
-        </div>
+          </>
+        )}
 
+        {/* Composer floats over every view (chat + dashboards). */}
         <div className="chat-composer-shell">
           <ChatInput prompt={prompt} setPrompt={setPrompt} onSubmit={handleSendMessage} disabled={chatLoading} />
         </div>
@@ -650,14 +695,20 @@ export default function App() {
             ) : (
               <>
                 <ModelTakeaway prediction={prediction} onViewModel={() => setPanelTab('model')} />
-                <SelectedGamePanel
-                  view="overview"
-                  gameFeed={selectedGameFeed}
-                  loading={selectedGameLoading}
-                  scoreError={scoreError}
-                  selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
-                  today={today}
-                />
+                {selectedCard.statusCode === 'P' && prediction ? (
+                  // Scheduled: a rich pregame scouting view (model line + pitching
+                  // matchup + recent form) instead of the thin venue pill list.
+                  <PregameOverview prediction={prediction} />
+                ) : (
+                  <SelectedGamePanel
+                    view="overview"
+                    gameFeed={selectedGameFeed}
+                    loading={selectedGameLoading}
+                    scoreError={scoreError}
+                    selectedCard={(selectedCard ?? scoreBox) as SelectedCardLike}
+                    today={today}
+                  />
+                )}
               </>
             )}
           </div>

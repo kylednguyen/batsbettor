@@ -75,6 +75,12 @@ The provider is behind a seam (`LLM_PROVIDER`):
   ```
   Run the backend with `LLM_PROVIDER=ollama`. Tunables: `OLLAMA_MODEL` (default `llama3.1:8b`), `OLLAMA_NUM_CTX` (default `8192`), `CHAT_TEMPERATURE` (default `0.3`), `OLLAMA_HOST`. The chat calls Ollama's local REST API directly — no extra npm dependency.
 
+## Architecture
+
+- [docs/architecture.md](docs/architecture.md) — system overview: frontend, backend routes, the two prediction stacks, ingestion + Supabase feature store, and evaluation tooling.
+- [docs/prediction-model.md](docs/prediction-model.md) — the analytic prediction chain in detail: run environment → projected score → win probability → market shrink → fair odds → edge → confidence %.
+- [tasks.md](tasks.md) — project plan and phase checklists.
+
 ## Prediction API
 
 `GET /api/predict/:gamePk` returns a grounded prediction: live game state, home/away win probability, projected final score and total, fair moneylines, no-vig book probabilities, model-vs-market edge, recent team form, probable starters and bullpen state, play-by-play scoring plays, a confidence rating, plain-English drivers, and data-quality warnings.

@@ -62,11 +62,7 @@ export function ChatMessage({ message, animate = false, onReveal }: ChatMessageP
 
   return (
     <article className="message-card assistant">
-      <div className="message-meta">
-        <span className="message-avatar" aria-hidden="true">⚾</span>
-        <span className="message-tag">{message.tag ?? 'BattersBetter'}</span>
-        {message.title && <span className="message-title">{message.title}</span>}
-      </div>
+      {message.title && <div className="message-title">{message.title}</div>}
       <FormattedAnswer text={revealed} />
       {isTyping && <span className="type-caret" aria-hidden="true" />}
     </article>

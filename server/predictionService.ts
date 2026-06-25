@@ -124,6 +124,9 @@ export interface Prediction {
   currentPitcher: string | null
   priorSource: 'market' | 'form-model' | 'home-field'
   confidence: 'Low' | 'Medium' | 'High'
+  // Value conviction (0–100), derived from the gap between the model's fair line
+  // and the book's no-vig line. Null when there's no book line to compare to.
+  confidencePct: number | null
   drivers: string[]
   warnings: string[]
   modelVersion: string
@@ -321,7 +324,7 @@ function buildDrivers(
       drivers.push(`${battingTeam} batting with runners on ${state.baseState.toLowerCase()}.`)
     }
   } else if (state.statusCode === 'P') {
-    drivers.push('Game has not started; estimate anchors to the pregame market and home-field edge.')
+    drivers.push('Pregame projection from recent team run rates and the probable starters; win % and fair odds follow from the projected run differential.')
   }
 
   if (homeForm && awayForm && homeForm.games > 0 && awayForm.games > 0) {
@@ -365,6 +368,72 @@ function buildDrivers(
   }
 
   return drivers
+}
+
+// Value conviction (0–100) from the model-vs-book discrepancy. The edge is the
+// gap in win probability between the model's fair line and the book's no-vig
+// line (percentage points). A saturating curve maps it to a confidence %: small
+// disagreements read low, larger ones climb and plateau (so one lopsided
+// matchup can't print 100%). Null when there's no book line to compare against.
+function edgeConfidencePct(edge: PredictionEdge | null): number | null {
+  if (!edge) return null
+  const edgePts = Math.abs(edge.homeProbabilityEdge) // |home edge| === |away edge|
+  return Math.round(100 * (1 - Math.exp(-edgePts / 5)))
+}
+
+// League-average runs scored per team per game — the anchor for the
+// matchup-specific projection below.
+const LEAGUE_RUNS_PER_GAME = 4.4
+
+// Expected runs for one team: its recent offense scaled by how the opponent
+// suppresses runs (their season run prevention blended with the specific
+// starter they're throwing). Multiplicative around league average — a good
+// offense facing a weak starter projects above 4.4, and vice versa.
+function teamExpectedRuns(
+  offense: TeamForm | null,
+  oppDefense: TeamForm | null,
+  oppStarter: PitcherProfile | null
+): number {
+  const lg = LEAGUE_RUNS_PER_GAME
+  const off = offense && offense.games > 0 ? offense.runsForAvg : lg
+  let def = oppDefense && oppDefense.games > 0 ? oppDefense.runsAgainstAvg : lg
+  // The opposing starter throws roughly half the game; their expected runs/9
+  // refines the team-level run prevention for tonight specifically.
+  if (oppStarter?.expectedRA9 != null) def = 0.5 * def + 0.5 * oppStarter.expectedRA9
+  return clampNum(lg * (off / lg) * (def / lg), 2.2, 8.0)
+}
+
+// Run park factors by home-team abbreviation (1.0 = neutral; >1 inflates runs,
+// <1 suppresses). Approximate published run factors. Applied to BOTH teams since
+// they play at the home park, so it scales the projected TOTAL without distorting
+// the win probability (the run differential and its variance scale together).
+const PARK_FACTORS: Record<string, number> = {
+  COL: 1.18, BOS: 1.08, CIN: 1.07, ATH: 1.1, KC: 1.05, AZ: 1.04, ARI: 1.04,
+  TEX: 1.03, PHI: 1.02, BAL: 1.02, TOR: 1.02, WSH: 1.01, CHC: 1.01,
+  PIT: 0.99, STL: 0.99, CLE: 0.98, LAD: 0.98, TB: 0.97, SD: 0.96, NYM: 0.96,
+  DET: 0.96, MIA: 0.95, SEA: 0.93, SF: 0.92,
+}
+
+function parkFactor(homeAbbr: string | null | undefined): number {
+  return (homeAbbr && PARK_FACTORS[homeAbbr]) ?? 1.0
+}
+
+// Matchup run environment driving the projected score. Home gets a small
+// home-field run bump (~0.12 runs), and both teams' expected runs are scaled by
+// the home park's run factor.
+function estimateRunEnvironment(
+  homeForm: TeamForm | null,
+  awayForm: TeamForm | null,
+  homeStarter: PitcherProfile | null,
+  awayStarter: PitcherProfile | null,
+  homeAbbr?: string | null
+): { homeRunsPerGame: number; awayRunsPerGame: number } {
+  const HOME_FIELD_RUNS = 0.12
+  const park = parkFactor(homeAbbr)
+  return {
+    homeRunsPerGame: (teamExpectedRuns(homeForm, awayForm, awayStarter) + HOME_FIELD_RUNS) * park,
+    awayRunsPerGame: teamExpectedRuns(awayForm, homeForm, homeStarter) * park,
+  }
 }
 
 export function buildPrediction({
@@ -439,16 +508,35 @@ export function buildPrediction({
     ? clampNum(basePrior + starterEdgePts + bullpenEdgePts, 0.05, 0.95)
     : basePrior
 
-  const wp = computeWinProbability(state, pregameHomeProb)
+  const runEnv = estimateRunEnvironment(homeForm, awayForm, homeStarter, awayStarter, state.homeAbbreviation)
+  const wp = computeWinProbability(state, pregameHomeProb, runEnv)
+
+  // Regularize the pregame line toward the book. Sportsbook odds are sharper
+  // than a 30-game-form run model, so we shrink the model's pregame win
+  // probability 30% toward the book's no-vig number — compressing spurious
+  // edges while keeping genuine ones. Live/final games are state-driven, not
+  // form-driven, so they're left untouched. The projected SCORE stays raw; only
+  // the betting line (win %, fair odds, edge) is shrunk.
+  const MARKET_SHRINK = 0.3
+  const isPregameLine = state.statusCode !== 'L' && state.statusCode !== 'F'
+  const homeWinProbability =
+    isPregameLine && market?.homeNoVigProbability != null
+      ? clampNum(
+          (1 - MARKET_SHRINK) * wp.homeWinProbability + MARKET_SHRINK * market.homeNoVigProbability,
+          0.02,
+          0.98
+        )
+      : wp.homeWinProbability
+  const awayWinProbability = 1 - homeWinProbability
 
   // Clamp away from 0/1 (decided games) so fair-odds conversion stays defined.
   const clampProb = (p: number) => Math.min(Math.max(p, 0.001), 0.999)
-  const fairHome = impliedProbToAmerican(clampProb(wp.homeWinProbability))
-  const fairAway = impliedProbToAmerican(clampProb(wp.awayWinProbability))
+  const fairHome = impliedProbToAmerican(clampProb(homeWinProbability))
+  const fairAway = impliedProbToAmerican(clampProb(awayWinProbability))
 
   const model: PredictionModel = {
-    homeWinProbability: wp.homeWinProbability,
-    awayWinProbability: wp.awayWinProbability,
+    homeWinProbability,
+    awayWinProbability,
     projectedHomeRuns: wp.projectedHomeRuns,
     projectedAwayRuns: wp.projectedAwayRuns,
     projectedTotalRuns: wp.projectedTotalRuns,
@@ -462,12 +550,8 @@ export function buildPrediction({
   let edge: PredictionEdge | null = null
   if (market?.homeNoVigProbability != null && market.awayNoVigProbability != null) {
     edge = {
-      homeProbabilityEdge: round1(
-        (wp.homeWinProbability - market.homeNoVigProbability) * 100
-      ),
-      awayProbabilityEdge: round1(
-        (wp.awayWinProbability - market.awayNoVigProbability) * 100
-      ),
+      homeProbabilityEdge: round1((homeWinProbability - market.homeNoVigProbability) * 100),
+      awayProbabilityEdge: round1((awayWinProbability - market.awayNoVigProbability) * 100),
     }
   }
 
@@ -534,6 +618,7 @@ export function buildPrediction({
     currentPitcher: plays?.currentPitcher ?? null,
     priorSource,
     confidence: decideConfidence(state, wp.fractionComplete, Boolean(market)),
+    confidencePct: edgeConfidencePct(edge),
     drivers: buildDrivers(state, model, edge, homeForm, awayForm, startingPitchers, bullpen),
     warnings,
     modelVersion: MODEL_VERSION,

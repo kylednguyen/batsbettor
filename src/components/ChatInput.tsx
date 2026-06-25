@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 
 interface ChatInputProps {
   prompt: string
@@ -8,57 +8,92 @@ interface ChatInputProps {
   disabled?: boolean
 }
 
-export function ChatInput({ prompt, setPrompt, onSubmit, minimal = false, disabled = false }: ChatInputProps) {
-  const [isFocused, setIsFocused] = useState(false)
-  const labelText = minimal ? 'Ask anything' : 'Ask about a live game, fair odds, final score projection, or biggest model edge...'
-  const showFloatingLabel = isFocused
+// Grows with content from one line up to this cap, then scrolls.
+const MAX_TEXTAREA_HEIGHT = 200
 
-  function handleSubmit(event: React.FormEvent) {
-    event.preventDefault()
+export function ChatInput({
+  prompt,
+  setPrompt,
+  onSubmit,
+  minimal = false,
+  disabled = false,
+}: ChatInputProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const placeholder = minimal
+    ? 'Ask anything'
+    : 'Ask about live games, fair odds, projections, or model edges…'
+
+  const hasText = prompt.trim().length > 0
+
+  // Auto-grow: collapse to one line, then grow to content height (capped). When
+  // empty we leave it at `auto` so it rests at a single line.
+  useLayoutEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    if (prompt) el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
+  }, [prompt])
+
+  function submitPrompt() {
     const trimmed = prompt.trim()
     if (!trimmed || disabled) return
     onSubmit?.(trimmed)
     setPrompt('')
   }
 
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    submitPrompt()
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      const trimmed = prompt.trim()
-      if (!trimmed || disabled) return
-      onSubmit?.(trimmed)
-      setPrompt('')
+      submitPrompt()
     }
   }
 
   return (
     <form
-      className={`composer${minimal ? ' composer--minimal' : ''}${showFloatingLabel ? ' composer--focused' : ''}`}
+      className={`composer${minimal ? ' composer--minimal' : ''}`}
       onSubmit={handleSubmit}
     >
-      <div className={`composer-floating-label${showFloatingLabel ? ' composer-floating-label--visible' : ''}`}>
-        {labelText}
-      </div>
+      <textarea
+        ref={textareaRef}
+        aria-label="Chat prompt"
+        className="composer-input"
+        onChange={(event) => setPrompt(event.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        rows={1}
+        value={prompt}
+        disabled={disabled}
+      />
 
-      <div className="composer-row">
-        <textarea
-          aria-label="Chat prompt"
-          className="composer-input"
-          onChange={(event) => setPrompt(event.target.value)}
-          onBlur={() => setIsFocused(false)}
-          onFocus={() => setIsFocused(true)}
-          onKeyDown={handleKeyDown}
-          placeholder={showFloatingLabel ? '' : labelText}
-          rows={1}
-          value={prompt}
-          disabled={disabled}
-        />
-        <button aria-label="Send prompt" className="send-button" type="submit" disabled={disabled}>
-          <svg aria-hidden="true" className="send-button__icon" width="18" height="18" strokeWidth="1.5" viewBox="0 0 24 24" fill="none">
-            <path d="M11.5757 1.42426C11.81 1.18995 12.1899 1.18995 12.4243 1.42426L22.5757 11.5757C22.81 11.81 22.8101 12.1899 22.5757 12.4243L12.4243 22.5757C12.19 22.81 11.8101 22.8101 11.5757 22.5757L1.42426 12.4243C1.18995 12.19 1.18995 11.8101 1.42426 11.5757L11.5757 1.42426Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </div>
+      <button
+        aria-label="Send prompt"
+        className="send-button"
+        type="submit"
+        disabled={disabled || !hasText}
+      >
+        <svg
+          aria-hidden="true"
+          className="send-button__icon"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+        >
+          <path
+            d="M12 5v14M5 12l7-7 7 7"
+            stroke="currentColor"
+            strokeWidth="2.25"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
     </form>
   )
 }

@@ -196,9 +196,13 @@ function shiftDate(dateString: string, deltaDays: number): string {
 }
 
 const NAME_STOP = new Set(
-  'what whats hows how is are was were the a an do did does done many much get got have has had play played playing pitch pitched hit hits homer homered home run runs rbi rbis strikeout strikeouts stat stats statline line numbers number this last past recent recently lately so far over season year month week weeks day days today tonight yesterday game games his her their about for of in on me tell show give good vs against and or doing look looking with going to will tomorrow next'.split(
-    ' '
-  )
+  ('what whats hows how is are was were the a an do did does done many much get got have has had play played playing pitch pitched hit hits homer homered home run runs rbi rbis strikeout strikeouts stat stats statline line numbers number this last past recent recently lately so far over season year month week weeks day days today tonight yesterday game games his her their about for of in on me tell show give good vs against and or doing look looking with going to will tomorrow next ' +
+    // Stat names/abbreviations must never be treated as player names — e.g.
+    // "Skubal's WAR" once resolved to Taylor Ward because "war" matched a name.
+    'war wrc woba ops obp slg avg era whip fip xfip babip xwoba xera siera ' +
+    'k bb hr rbi tb ip sb cs hbp wpa ba woba+ k9 bb9 k/9 bb/9  k% bb% saber sabermetrics ' +
+    'mvp cy young award leader leaders leaderboard war+ era+ ' +
+    'doing pitching hitting batting fielding defense offense').split(' ')
 )
 
 function nameCandidates(message: string): string[] {
@@ -430,5 +434,122 @@ export async function buildLeadersContext(message: string, season: string): Prom
     return text
   } catch {
     return `WAR leaderboard lookup failed for ${season}.`
+  }
+}
+
+// --- Standings ---------------------------------------------------------------
+const DIVISION_NAMES: Record<number, string> = {
+  200: 'AL West', 201: 'AL East', 202: 'AL Central',
+  203: 'NL West', 204: 'NL East', 205: 'NL Central',
+}
+const STANDINGS_TTL = 10 * 60 * 1000
+let standingsCache: { season: string; at: number; divisions: { id: number; name: string; rows: StandingRow[] }[] } | null = null
+
+interface StandingRow {
+  name: string
+  abbr: string
+  wins: number
+  losses: number
+  pct: string
+  gamesBack: string
+  wildCardGamesBack: string
+  streak: string
+  last10: string
+  runDiff: number
+  rank: number
+  team: Any
+}
+
+async function fetchStandings(season: string) {
+  if (standingsCache && standingsCache.season === season && Date.now() - standingsCache.at < STANDINGS_TTL) {
+    return standingsCache.divisions
+  }
+  const r = await statsApi(
+    `/standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason&hydrate=team`
+  )
+  const divisions = (r?.records ?? []).map((div: Any) => {
+    const id: number = div?.division?.id
+    const rows: StandingRow[] = (div?.teamRecords ?? []).map((t: Any) => {
+      const l10 = (t?.records?.splitRecords ?? []).find((s: Any) => s?.type === 'lastTen')
+      return {
+        name: t?.team?.name ?? '',
+        abbr: t?.team?.abbreviation ?? t?.team?.name ?? '',
+        wins: t?.wins ?? 0,
+        losses: t?.losses ?? 0,
+        pct: t?.winningPercentage ?? '',
+        gamesBack: t?.gamesBack ?? '-',
+        wildCardGamesBack: t?.wildCardGamesBack ?? '-',
+        streak: t?.streak?.streakCode ?? '',
+        last10: l10 ? `${l10.wins}-${l10.losses}` : '',
+        runDiff: typeof t?.runDifferential === 'number' ? t.runDifferential : 0,
+        rank: Number(t?.divisionRank ?? 0),
+        team: t?.team,
+      }
+    })
+    rows.sort((a, b) => a.rank - b.rank)
+    return { id, name: DIVISION_NAMES[id] ?? `Division ${id}`, rows }
+  })
+  standingsCache = { season, at: Date.now(), divisions }
+  return divisions
+}
+
+function divisionToText(d: { name: string; rows: StandingRow[] }, highlightAbbr?: string): string {
+  const lines = d.rows.map((t) => {
+    const star = highlightAbbr && t.abbr === highlightAbbr ? ' ←' : ''
+    const rd = `${t.runDiff >= 0 ? '+' : ''}${t.runDiff}`
+    return `  ${t.rank}. ${t.abbr} ${t.wins}-${t.losses} (${t.pct}), GB ${t.gamesBack}, L10 ${t.last10}, ${t.streak}, run diff ${rd}${star}`
+  })
+  return `${d.name}:\n${lines.join('\n')}`
+}
+
+// Standings context — full league, or filtered to the team / division / league
+// mentioned in the question. Columns: rank, W-L, pct, games back, last 10,
+// streak, run differential.
+export async function buildStandingsContext(message: string, season: string): Promise<string> {
+  const m = ` ${message.toLowerCase()} `
+  try {
+    const divisions = await fetchStandings(season)
+    if (!divisions.length) return 'Standings are unavailable right now.'
+
+    // Team mention → that team's division, with the team flagged + a summary.
+    for (const d of divisions) {
+      for (const t of d.rows) {
+        const full = t.name.toLowerCase()
+        const nick = full.split(' ').slice(-1)[0]
+        if (
+          (full && m.includes(full)) ||
+          (nick.length > 3 && m.includes(nick)) ||
+          new RegExp(`\\b${t.abbr.toLowerCase()}\\b`).test(m)
+        ) {
+          const summary = `${t.abbr} are ${t.rank === 1 ? '1st' : `${t.rank}${['', 'st', 'nd', 'rd'][t.rank] ?? 'th'}`} in the ${d.name} at ${t.wins}-${t.losses} (${t.pct}), ${t.gamesBack === '-' ? 'leading the division' : `${t.gamesBack} GB`}, ${t.streak}, L10 ${t.last10}.`
+          return `${summary}\n\n${divisionToText(d, t.abbr)}`
+        }
+      }
+    }
+
+    // Division mention.
+    const divByName = divisions.find((d) => m.includes(d.name.toLowerCase()) || m.includes(d.name.toLowerCase().replace('al ', 'american league ').replace('nl ', 'national league ')))
+    if (divByName) return divisionToText(divByName)
+
+    // League mention → that league's three divisions.
+    const wantsAL = /\b(al|american league)\b/.test(m)
+    const wantsNL = /\b(nl|national league)\b/.test(m)
+    if (wantsAL !== wantsNL) {
+      const ids = wantsAL ? [201, 202, 200] : [204, 205, 203]
+      return divisions
+        .filter((d) => ids.includes(d.id))
+        .sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
+        .map((d) => divisionToText(d))
+        .join('\n\n')
+    }
+
+    // Default: all six divisions (AL then NL).
+    const order = [201, 202, 200, 204, 205, 203]
+    return divisions
+      .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+      .map((d) => divisionToText(d))
+      .join('\n\n')
+  } catch {
+    return 'Standings lookup failed.'
   }
 }

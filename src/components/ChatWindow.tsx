@@ -32,11 +32,9 @@ export function ChatWindow({ messages, loading = false }: ChatWindowProps) {
       ))}
       {loading && (
         <article className="message-card assistant message-card--loading">
-          <div className="message-meta">
-            <span className="message-avatar" aria-hidden="true">⚾</span>
-            <span className="message-tag">BattersBetter</span>
+          <div className="chat-spinner" role="status" aria-label="Thinking">
+            <div className="chat-spinner__core" />
           </div>
-          <span className="type-caret" aria-hidden="true" />
         </article>
       )}
       <div ref={bottomRef} />

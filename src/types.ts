@@ -143,6 +143,7 @@ export interface Prediction {
   currentPitcher: string | null
   priorSource: 'market' | 'form-model' | 'home-field'
   confidence: 'Low' | 'Medium' | 'High'
+  confidencePct: number | null
   drivers: string[]
   warnings: string[]
   modelVersion: string

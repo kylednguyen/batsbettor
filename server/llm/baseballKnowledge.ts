@@ -109,6 +109,26 @@ export const baseballKnowledgeDocs: KnowledgeDoc[] = [
     text: `Batters generally hit better against opposite-handed pitchers: right-handed batters do better against lefties and left-handed batters against righties. A lineup stacked with the platoon advantage against the current pitcher is more dangerous.`,
   },
   {
+    id: 'war',
+    title: 'WAR (Wins Above Replacement)',
+    text: `WAR estimates how many more wins a player is worth than a freely available "replacement-level" player, bundling hitting, baserunning, fielding, and (for pitchers) run prevention into one number. Roughly: 0–1 WAR is a bench/replacement player, ~2 a solid regular, ~4–5 an All-Star, and 6+ an MVP-level season. It is the standard one-number basis for MVP and Cy Young discussion, though real award voting also weighs team success and narrative.`,
+  },
+  {
+    id: 'woba-wrcplus',
+    title: 'wOBA and wRC+',
+    text: `wOBA (weighted on-base average) is an offense rate stat that weights each way of reaching base by its real run value, so it is more accurate than AVG, OBP, or SLG; it is scaled like OBP (around .320 is league average, .400+ is elite). wRC+ (weighted runs created plus) puts total offensive value on a park- and league-adjusted scale where 100 is exactly league average and each point above/below is one percent better/worse — so a 150 wRC+ hitter is 50% above average.`,
+  },
+  {
+    id: 'slash-line',
+    title: 'Slash line (AVG/OBP/SLG) and OPS',
+    text: `A hitter's slash line is batting average / on-base percentage / slugging percentage. AVG is hits per at-bat; OBP adds walks and hit-by-pitch (how often they reach base); SLG is total bases per at-bat (power). OPS is OBP + SLG, a quick combined measure of on-base and power — roughly .700 is average, .800 good, .900+ excellent, 1.000+ elite.`,
+  },
+  {
+    id: 'whip-quality-start',
+    title: 'WHIP, K/9, and quality start',
+    text: `For pitchers: WHIP is walks plus hits allowed per inning (around 1.30 is average, under 1.00 is excellent); K/9 and BB/9 are strikeouts and walks per nine innings. ERA is earned runs per nine innings; FIP estimates ERA from only strikeouts, walks, and home runs. A "quality start" is a traditional benchmark: at least 6 innings pitched with 3 or fewer earned runs.`,
+  },
+  {
     id: 'confidence',
     title: 'Model confidence',
     text: `Confidence reflects how much the model trusts its estimate. It is higher late in decided games and when sportsbook odds are available, and lower pregame or when odds are missing. Low confidence means the estimate should be treated as rough.`,

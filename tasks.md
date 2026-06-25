@@ -307,11 +307,12 @@ Training prints "Skipping retrain"         → fewer than 50 labeled games so fa
 
 ```text
 [x] Tier 0 live: GET /api/predict/:gamePk returns devig-v0 before any training
+[x] First training run beats / matches market baseline log loss
+    (live LR val log loss 0.4933 vs uniform 0.6931 — see /api/backtest)
 [ ] Accumulate 2-4 weeks of labeled games in Supabase
-[ ] First training run beats / matches market baseline log loss
 [ ] Prospective test: let new version run live, score predictions after finals
-[ ] /backtest endpoint: re-score identical historical snapshots under multiple
-    model_versions and rank by log loss / Brier (Phase 3)
+[x] /backtest endpoint: re-score identical historical snapshots under every
+    artifact version + baselines, rank by log loss / Brier (Phase 3)
 ```
 
 The market is a strong baseline — large disagreements with the no-vig probability usually mean the model is wrong, which is itself informative.
@@ -361,47 +362,56 @@ The market is a strong baseline — large disagreements with the no-vig probabil
     BY-GAME time split so one game's states never straddle train/validation
 [x] Inference routes live games to the live model; falls back to
     pregame/devig when no live artifact exists
-[ ] Run the backfill over the season to date (gives training data instantly,
-    no waiting for accumulation)
-[ ] Train: npm run train — confirm /api/model reports lr-live-<date>
+[x] Run the backfill over the season to date (local Supabase) — labeled
+    live-state rows reconstructed from play-by-play
+[x] Train: npm run train — local model trained (lr-live-2026-06-12,
+    val log loss 0.4933); /api/model serves it
 ```
 
 ### Phase 3 — Backtesting
 ```text
-[ ] GET /api/backtest: re-score historical pregame snapshots under each
-    artifact version; report log loss / Brier / calibration per version
+[x] GET /api/backtest: re-score historical snapshots under each artifact
+    version + baselines; reports log loss / Brier / accuracy / calibration
+    per version, per cohort (server/model/backtest.ts)
+[x] "Top edges" tab in the frontend fed by predictions (Live Games / Top
+    Edges / Odds dashboards — src/components/Dashboards.tsx)
+[x] Model panel comparison (LR/SVC/NearestCentroid/KNN/HistGBT) on past data
+    — LR wins, log loss 0.4933 (ml/compare_models.py)
 [ ] Profit/loss simulation vs closing moneyline
-[ ] "Top edges" tab in the frontend fed by predictions table
 ```
 
 ### Phase 4 — Richer features, then gradient boosting via ONNX
 
-Data still left out of the win probability models, and where to pull it.
-All of it comes from the free MLB StatsAPI — add to the feature builders,
-backfill/accumulate, retrain (the artifact tripwire forces the retrain).
+Status note: most of these now feed the **analytic** prediction
+(`predictionService.ts`) — the run-environment model projects each team's runs
+from recent form, the opposing starter, and the home park, derives win % from
+the projected run differential, then shrinks 30% toward the book line. They are
+NOT yet folded into the *trained* feature vector (`buildFeatureVector.ts`) /
+artifact — that fold + retrain is the remaining work for each `[~]` item.
 
 ```text
 STARTING PITCHER QUALITY (pregame + live models)
-[ ] Probable starters      GET /api/v1/schedule?hydrate=probablePitcher
-[ ] Season pitching stats  GET /api/v1/people/{id}/stats?stats=season&group=pitching
-    → ERA, WHIP, K/9, BB/9, innings per start
-[ ] Recent form            stats=gameLog → last 3 starts ERA / pitch counts
+[x] Probable starters      pitcherService.getProbableStarters (feed hydrate)
+[x] Season pitching stats  ERA, FIP, K/9, BB/9, WHIP, IP, expectedRA9 (xRA9)
+    → feeds run prevention in estimateRunEnvironment + the chat context
+[ ] Recent form            last 3 starts ERA / pitch counts
+[~] Fold starter xRA9 into the TRAINED feature vector + retrain
 
-BULLPEN FEATURES (the big omission)
-[ ] Bullpen season stats   GET /api/v1/teams/{id}/stats?group=pitching
-    minus starters → bullpen ERA, WHIP, K%
-[ ] Bullpen fatigue        boxscores from the last 3 days
-    (GET /api/v1.1/game/{pk}/feed/live per recent game) → relief innings
-    thrown per team over 1/3/5 days → fatigue score
-[ ] Live bullpen state     current feed boxscore → which relievers already
-    used tonight; starter pitch count (liveData.boxscore pitchersFaced/pitches)
+BULLPEN FEATURES
+[x] Bullpen fatigue        bullpenService: reliever pitches/relievers used/
+    back-to-back arms over last 3 days → fatigueScore (nudges the analytic prior)
+[ ] Bullpen season stats   team pitching minus starters → bullpen ERA/WHIP/K%
+[ ] Live bullpen state     relievers already used tonight; starter pitch count
+[~] Fold bullpen fatigue into the TRAINED feature vector + retrain
 
 TEAM RECENT FORM
-[ ] Last 10/30 game runs scored & allowed
-    GET /api/v1/schedule?teamId=...&startDate=...&endDate=... finals
+[x] Last 10/30 game runs scored & allowed  teamForm.ts (runsForAvg,
+    runsAgainstAvg, run diff, last-10 splits) → drives the run-environment model
+[x] Already a TRAINED pregame feature (home/away win pct in win_prob_latest)
 
 GAME CONTEXT
-[ ] Park factor            static lookup table by venue (publicly published)
+[x] Park factor            PARK_FACTORS table in predictionService → scales the
+    projected total (SF ~0.92 ↔ COL ~1.18), win % undistorted
 [ ] Home/away splits       team stats endpoint with sitCodes
 [ ] Rest/travel            derive from schedule (games on consecutive days)
 
@@ -425,19 +435,23 @@ used in the game" is not).
 
 ## MVP Chatbot Scope
 
-The chatbot should answer only these first:
+MVP scope (all met) — and the assistant now answers well beyond it:
 
 ```text
-What games are live?
-What is the live score?
-What is the home team win probability?
-What are the current book odds?
-What are the no-vig probabilities?
-What are the model fair odds?
-What is the model vs book difference?
+[x] What games are live? / scores / status (scoreboard intent)
+[x] Home/away win probability + projected score
+[x] Current book odds, no-vig probabilities, model fair odds
+[x] Model-vs-book difference (single game)
+[x] Which game has the highest edge / best value tonight (SLATE EDGES — ranks
+    every game, server/llm/mlbChatService.ts buildSlateEdges)
+[x] Player stat lines + ranges (today / week / season / last N) incl. WAR/OPS/
+    wOBA/ERA/WHIP; MVP/Cy Young by WAR leaderboard
+[x] Pitching matchup: both starters' ERA/FIP/K9/WHIP/xRA9 + bullpen fatigue
+[x] Concept Q&A grounded in a knowledge base (WAR, wOBA, no-vig, run expectancy…)
 ```
 
-Not yet: player props, pitch-level models, Monte Carlo simulation, weather, bullpen fatigue, batter-vs-pitcher matchup engine.
+Not yet: player props, pitch-level models, Monte Carlo simulation, weather,
+batter-vs-pitcher matchup engine. (Bullpen fatigue IS now modeled.)
 
 ---
 

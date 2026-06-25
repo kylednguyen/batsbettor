@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-06-13T05:18:39.790886+00:00",
+  "cohort": "live",
+  "n_games": 1024,
+  "n_train_rows": 62170,
+  "n_val_rows": 15691,
+  "features": [
+    "inning",
+    "is_top_inning",
+    "outs",
+    "run_diff",
+    "total_runs",
+    "on_first",
+    "on_second",
+    "on_third",
+    "home_team_win_pct",
+    "away_team_win_pct"
+  ],
+  "results": [
+    {
+      "model": "LogisticRegression",
+      "accuracy": 0.7388949079089924,
+      "log_loss": 0.4932984477331094,
+      "brier": 0.1664681508880614,
+      "roc_auc": 0.8340113993082623
+    },
+    {
+      "model": "SVC",
+      "accuracy": 0.7350073290421261,
+      "log_loss": 0.5147378174123035,
+      "brier": 0.1735578023658268,
+      "roc_auc": 0.8261792824133101
+    },
+    {
+      "model": "HistGradientBoosting",
+      "accuracy": 0.6843413421706711,
+      "log_loss": 0.7007552608401574,
+      "brier": 0.2205041275847216,
+      "roc_auc": 0.765758822053219
+    },
+    {
+      "model": "KNeighbors",
+      "accuracy": 0.7198393983812377,
+      "log_loss": 0.787837855842728,
+      "brier": 0.17718493970358096,
+      "roc_auc": 0.813350185690709
+    },
+    {
+      "model": "NearestCentroid",
+      "accuracy": 0.7302912497610095,
+      "log_loss": null,
+      "brier": null,
+      "roc_auc": null
+    }
+  ],
+  "best_by_log_loss": "LogisticRegression"
+}

@@ -69,7 +69,10 @@ export function buildModelOutput(p: Prediction): ModelOutput {
       (homeIsValue ? p.model.fairHomeMoneylineDisplay : p.model.fairAwayMoneylineDisplay) ?? '—'
     const status: 'Playable' | 'Lean' | 'Pass' =
       edgePts >= 3 ? 'Playable' : edgePts >= 1 ? 'Lean' : 'Pass'
-    valueBet = { team, bookOdds, bookImplied, modelProbability, edgePts, fairOdds, status, confidence: p.confidence }
+    // Prefer the numeric value-confidence (from the model-vs-book gap); fall back
+    // to the qualitative label when no book line produced a percentage.
+    const confidence = p.confidencePct != null ? `${p.confidencePct}%` : p.confidence
+    valueBet = { team, bookOdds, bookImplied, modelProbability, edgePts, fairOdds, status, confidence }
   }
 
   const sameTeam = valueBet ? valueBet.team === winner : true

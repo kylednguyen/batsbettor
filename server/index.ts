@@ -17,6 +17,7 @@ import {
   getScheduleByDate,
 } from './mlbStatsService.js'
 import { predictGame, getActiveModelVersion } from './model/predict.js'
+import { runBacktest } from './model/backtest.js'
 import { formatAmericanOdds, translateMoneyline, translateProbability } from './utils/oddsMath.js'
 
 const app = express()
@@ -230,6 +231,24 @@ app.get('/api/odds/translate', async (req: Request, res: Response) => {
 
 app.get('/api/model', (_req: Request, res: Response) => {
   res.json({ models: getActiveModelVersion() })
+})
+
+// Phase 3 backtest: re-score persisted feature snapshots under every model
+// artifact + reference baselines, ranked by log loss per cohort.
+//   ?cohort=pregame|live|all (default all)   ?limit=<max snapshots>
+app.get('/api/backtest', async (req: Request, res: Response) => {
+  try {
+    const cohortParam = String(req.query.cohort ?? 'all')
+    const cohort = cohortParam === 'pregame' || cohortParam === 'live' ? cohortParam : 'all'
+    const limit = req.query.limit ? Number(req.query.limit) : undefined
+    if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
+      return res.status(400).json({ error: 'limit must be a positive number' })
+    }
+    const report = await runBacktest({ cohort, limit })
+    return res.json(report)
+  } catch (error) {
+    return res.status(502).json({ error: formatError(error) })
+  }
 })
 
 app.post('/api/chat', async (req: Request, res: Response) => {

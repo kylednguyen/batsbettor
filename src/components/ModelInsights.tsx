@@ -1,5 +1,6 @@
 import type { Prediction } from '../types'
 import { buildModelOutput } from '../modelOutput'
+import { ModelInsightsSkeleton } from './Skeleton'
 
 interface ModelInsightsProps {
   prediction: Prediction | null
@@ -42,6 +43,12 @@ export function ModelTakeaway({
             <strong>{valueBet.status}</strong>
           </div>
         ) : null}
+        {valueBet ? (
+          <div>
+            <span>Confidence</span>
+            <strong>{valueBet.confidence}</strong>
+          </div>
+        ) : null}
       </div>
       <button className="model-takeaway__btn" onClick={onViewModel} type="button">
         View model details →
@@ -52,12 +59,7 @@ export function ModelTakeaway({
 
 export function ModelInsights({ prediction, loading, error }: ModelInsightsProps) {
   if (loading && !prediction) {
-    return (
-      <div className="model-insights">
-        <p className="section-label">Model insights</p>
-        <p className="model-insights__status">Crunching the model…</p>
-      </div>
-    )
+    return <ModelInsightsSkeleton />
   }
 
   if (error && !prediction) {

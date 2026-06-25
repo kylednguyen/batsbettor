@@ -62,6 +62,15 @@ export interface WinProbabilityResult {
   marketWeight: number
 }
 
+// Matchup-specific full-game run estimates (from team offense, opponent run
+// prevention, and the probable starters). When omitted the model falls back to
+// the league-average 4.5 runs/team, which is why every projection used to read
+// the same — pass this to get a real, varying projected score.
+export interface RunEnvironment {
+  homeRunsPerGame: number
+  awayRunsPerGame: number
+}
+
 function baseStateCode(state: GameState): string {
   if (!state.onFirst && !state.onSecond && !state.onThird) return 'empty'
   return `${state.onFirst ? '1' : '-'}${state.onSecond ? '2' : '-'}${state.onThird ? '3' : '-'}`
@@ -89,8 +98,14 @@ function normalCdf(x: number): number {
   return x >= 0 ? 1 - p : p
 }
 
-// Expected remaining runs for each team given the current state.
-function expectedRemainingRuns(state: GameState): { home: number; away: number } {
+// Expected remaining runs for each team given the current state. Each team's
+// per-inning scoring rate is matchup-specific (homePerInning / awayPerInning),
+// so a strong offense projects more remaining runs than a weak one.
+function expectedRemainingRuns(
+  state: GameState,
+  homePerInning: number,
+  awayPerInning: number
+): { home: number; away: number } {
   const inning = state.inning ?? 1
   const half = state.half ?? 'Top'
   const batting = runExpectancy(state)
@@ -123,8 +138,8 @@ function expectedRemainingRuns(state: GameState): { home: number; away: number }
   }
 
   return {
-    home: homeBattingNow + homeRegHalves * RUNS_PER_INNING + homeExtraHalves * EXTRA_INNING_RUNS,
-    away: awayBattingNow + awayRegHalves * RUNS_PER_INNING + awayExtraHalves * EXTRA_INNING_RUNS,
+    home: homeBattingNow + homeRegHalves * homePerInning + homeExtraHalves * EXTRA_INNING_RUNS,
+    away: awayBattingNow + awayRegHalves * awayPerInning + awayExtraHalves * EXTRA_INNING_RUNS,
   }
 }
 
@@ -135,12 +150,21 @@ function outsCompleted(state: GameState): number {
 }
 
 // Pregame prior from the market no-vig home probability, or home-field baseline.
+// `runEnv` carries matchup-specific full-game run estimates; without it the
+// model falls back to a flat 4.5 runs/team (the old constant-projection bug).
 export function computeWinProbability(
   state: GameState,
-  pregameHomeProb: number | null
+  pregameHomeProb: number | null,
+  runEnv?: RunEnvironment | null
 ): WinProbabilityResult {
   const homeScore = state.homeScore ?? 0
   const awayScore = state.awayScore ?? 0
+
+  const leagueRunsPerGame = REGULATION_INNINGS * RUNS_PER_INNING // 4.5
+  const homeRunsPerGame = runEnv?.homeRunsPerGame ?? leagueRunsPerGame
+  const awayRunsPerGame = runEnv?.awayRunsPerGame ?? leagueRunsPerGame
+  const homePerInning = homeRunsPerGame / REGULATION_INNINGS
+  const awayPerInning = awayRunsPerGame / REGULATION_INNINGS
 
   // Decided game: return the realized outcome.
   if (state.statusCode === 'F') {
@@ -157,7 +181,34 @@ export function computeWinProbability(
     }
   }
 
-  const rem = expectedRemainingRuns(state)
+  // Pregame: project the full-game run estimates directly, then derive win
+  // probability from the projected run differential — P(final home - away > 0)
+  // under a normal model whose variance scales with the run total. This keeps
+  // the projected score, win probability, and fair moneyline on ONE consistent
+  // chain (run model → win % → odds), instead of the score coming from the run
+  // model while the win % echoes the book. The market line is compared against
+  // this number elsewhere to surface the edge. `pregameHomeProb` (the market
+  // prior) is intentionally NOT used here so the model can disagree with the book.
+  if (state.statusCode !== 'L') {
+    const meanDiff = homeRunsPerGame - awayRunsPerGame
+    const variance = (homeRunsPerGame + awayRunsPerGame) * RUN_DISPERSION
+    const sigma = Math.sqrt(Math.max(variance, 1e-6))
+    // Clamp to [2%, 98%]: bounded team-run inputs already keep this sane, but a
+    // guard rail stops any single lopsided matchup from printing absurd odds.
+    const homeWinProbability = clamp(normalCdf(meanDiff / sigma), 0.02, 0.98)
+    return {
+      homeWinProbability,
+      awayWinProbability: 1 - homeWinProbability,
+      projectedHomeRuns: round1(homeRunsPerGame),
+      projectedAwayRuns: round1(awayRunsPerGame),
+      projectedTotalRuns: round1(homeRunsPerGame + awayRunsPerGame),
+      projectedRunDiff: round1(meanDiff),
+      fractionComplete: 0,
+      marketWeight: 0,
+    }
+  }
+
+  const rem = expectedRemainingRuns(state, homePerInning, awayPerInning)
   const meanFinalDiff = homeScore + rem.home - (awayScore + rem.away)
 
   // Variance of remaining runs (each team), Poisson-like with dispersion.
