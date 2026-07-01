@@ -7,6 +7,7 @@ import { ChatInput } from './components/ChatInput'
 import { ChatWindow } from './components/ChatWindow'
 import { SelectedGamePanel } from './components/SelectedGamePanel'
 import { getGameFeed, getScoreCardsByDate, getTodayScoreCardSummary, sendChatMessage } from './api/client'
+import { API_BASE_URL } from './api/config'
 
 import type { ScoreCard, ScoreBox, ChatMessage } from './types'
 import type { SelectedCardLike } from './components/SelectedGamePanel'
@@ -215,7 +216,7 @@ export default function App() {
   }, [isSidebarGamesExpanded, sidebarDateOffset])
 
   useEffect(() => {
-    const socket = io('/', {
+    const socket = io(API_BASE_URL || '/', {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
     })

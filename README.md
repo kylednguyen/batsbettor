@@ -80,6 +80,29 @@ SUPABASE_URL=... SUPABASE_SERVICE_KEY=... python ml/train_win_prob.py
 
 **Or via GitHub Actions:** add `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` as repo secrets, then run the "Train win probability model" workflow from the Actions tab (it also runs weekly on a cron). The workflow commits the model artifacts; the server picks them up within 5 minutes and `GET /api/model` reports the new `lr-*` (pregame) and `lr-live-*` (live) versions. During live games, inference automatically uses the live-state model.
 
+## Deploying
+
+The app is two pieces with different hosting needs:
+
+- **Frontend (static Vite build)** → Vercel. `vercel.json` is already configured
+  (`npm run build` → `dist`). Import the repo in Vercel and it deploys as-is.
+- **Backend (Express + Socket.IO + 15s tick loop)** → a host that runs a
+  **persistent process with WebSocket support** (Railway, Render, Fly). Vercel's
+  serverless functions can't hold a socket server or a background loop, so the
+  backend does **not** run on Vercel.
+
+Wire them together with one build-time env var:
+
+1. Deploy the backend; note its public URL (e.g. `https://batsbettor-api.up.railway.app`).
+2. In Vercel, set `VITE_API_URL` to that URL and redeploy the frontend.
+   Empty/unset keeps same-origin behavior for local dev and single-host setups.
+3. Set the backend's own secrets (`ANTHROPIC_API_KEY`, `ODDS_API_KEY`,
+   `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`) on the backend host, not on Vercel.
+
+`fetch` calls and the Socket.IO connection both read `VITE_API_URL` (see
+`src/api/config.ts`), so no other code changes are needed to point at a remote
+backend. The server already reflects the request origin for CORS.
+
 ## Status
 
 Core UI, live data ingestion, and the Tier 0 prediction layer (de-vig fair odds) are working. The trained logistic regression model goes live after enough labeled games accumulate. Roadmap and architecture details: `tasks.md`.

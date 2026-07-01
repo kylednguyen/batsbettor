@@ -1,4 +1,5 @@
 import type { ScoreCard, ScoreBox, MlbFeedPayload, ChatMessage } from '../types'
+import { apiUrl } from './config'
 
 interface ApiErrorPayload {
   error: string
@@ -42,7 +43,7 @@ export async function sendChatMessage(
   message: string,
   gameContext?: ScoreCard | null
 ): Promise<ChatMessage> {
-  const response = await fetch('/api/chat', {
+  const response = await fetch(apiUrl('/api/chat'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, gameContext: gameContext ?? null }),
@@ -56,7 +57,7 @@ export async function sendChatMessage(
 }
 
 export async function getTodayScoreCardSummary(): Promise<TodayScoreCardSummaryPayload> {
-  const response = await fetch('/api/mlb/today-score')
+  const response = await fetch(apiUrl('/api/mlb/today-score'))
   const payload = await readApiPayload(response)
   if (!response.ok) {
     throw new Error((payload as ApiErrorPayload).error || 'Failed to load featured score card')
@@ -68,7 +69,7 @@ export async function getScoreCardsByDate(date?: string): Promise<ScoreCardsByDa
   const search = new URLSearchParams()
   if (date) search.set('date', date)
 
-  const response = await fetch(`/api/mlb/scorecards${search.size ? `?${search}` : ''}`)
+  const response = await fetch(apiUrl(`/api/mlb/scorecards${search.size ? `?${search}` : ''}`))
   const payload = await readApiPayload(response)
   if (!response.ok) {
     throw new Error((payload as ApiErrorPayload).error || 'Failed to load score cards')
@@ -77,7 +78,7 @@ export async function getScoreCardsByDate(date?: string): Promise<ScoreCardsByDa
 }
 
 export async function getGameFeed(gamePk: number): Promise<MlbFeedPayload> {
-  const response = await fetch(`/api/mlb/game/${gamePk}/live`)
+  const response = await fetch(apiUrl(`/api/mlb/game/${gamePk}/live`))
   const payload = await readApiPayload(response)
   if (!response.ok) {
     throw new Error((payload as ApiErrorPayload).error || 'Failed to load game feed')
